@@ -11,15 +11,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_dropbox_client() -> dropbox.Dropbox:
-    app_key      = os.getenv("DROPBOX_APP_KEY")
-    app_secret   = os.getenv("DROPBOX_APP_SECRET")
+    app_key = os.getenv("DROPBOX_APP_KEY")
+    app_secret = os.getenv("DROPBOX_APP_SECRET")
     refresh_token = os.getenv("DROPBOX_REFRESH_TOKEN")
 
-    missing = [k for k, v in {
-        "DROPBOX_APP_KEY": app_key,
-        "DROPBOX_APP_SECRET": app_secret,
-        "DROPBOX_REFRESH_TOKEN": refresh_token,
-    }.items() if not v]
+    missing = [
+        k for k, v in {
+            "DROPBOX_APP_KEY": app_key,
+            "DROPBOX_APP_SECRET": app_secret,
+            "DROPBOX_REFRESH_TOKEN": refresh_token,
+        }.items() if not v
+    ]
 
     if missing:
         raise EnvironmentError(
