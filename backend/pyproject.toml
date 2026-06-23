@@ -1,0 +1,9 @@
+[project]
+name = "into-the-grape-vine"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "dropbox>=11.36.0",
+    "python-dotenv>=1.0.0",
+    "openpyxl>=3.1.0",
+]
