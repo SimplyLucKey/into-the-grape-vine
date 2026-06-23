@@ -1,108 +1,142 @@
 # 🍇 Into the Grape Vine
+
 Come explore into the grape vine in the Amazons. A personal browser extension that captures your Amazon Vine order history and syncs it to your Dropbox — with optional LLM-generated reviews trained on your own writing style.
 
 ---
 
-## Data extraction foundation
-
-- **Content script** (`content.js`) — runs automatically on `amazon.com/vine/orders` while you're logged in. Reads each row of the Vine orders table and extracts:
-  - Product name
-  - ASIN
-  - Product URL
-  - Order date
-  - Fair Market Value (FMV)
-  - Order ID
-
-  No login automation, no navigation — it reads what is already on screen in your active session.
-
-- **Background script** (`background.js`) — receives the extracted data, deduplicates by order ID, sorts newest-first, and stores everything in the browser's local storage. Acts as a queue for later phases.
-
-- **Popup UI** (`popup.html` / `popup.js`) — the panel that opens when you click the extension icon. Shows all captured orders with thumbnails, FMV, and dates. Includes a manual "Extract this page" button and a "Clear queue" button.
-
-Two builds are included:
-- `chrome/` — Manifest V3, for Chrome and any Chromium-based browser
-- `firefox/` — Manifest V2, for Firefox and Zen browser
-
-The logic in `content.js`, `background.js`, `popup.html`, and `popup.js` is **identical** between both builds. Only the `manifest.json` differs.
-
----
-
-## How to install
-
-### Chrome
-
-1. Open Chrome and go to `chrome://extensions`
-2. Enable **Developer mode** (toggle in the top-right corner)
-3. Click **Load unpacked**
-4. Select the `chrome/` folder from this repo
-5. The 🍇 icon will appear in your toolbar
-
-### Zen (Firefox)
-
-1. Open Zen and go to `about:debugging`
-2. Click **This Firefox** in the left sidebar
-3. Click **Load Temporary Add-on…**
-4. Navigate into the `firefox/` folder and select `manifest.json`
-5. The extension is now active for this session
-
-> **Note:** Firefox's "Load Temporary Add-on" only lasts until the browser is closed. For a permanent install without publishing to the Firefox Add-on Store, you need Firefox Developer Edition or Nightly with `xpinstall.signatures.required` set to `false` in `about:config`.
-
----
-
-## How to test it
-
-1. Install the extension on Chrome using the steps above
-2. Go to [amazon.com/vine/orders](https://www.amazon.com/vine/orders) while logged in to your Vine account
-3. Wait for the page to fully load (all rows should be visible)
-4. Click the 🍇 extension icon in your toolbar
-5. Click **Extract this page**
-6. You should see your 10 most recent Vine orders listed with thumbnails, FMV amounts, and dates
-
-**To capture more orders:**
-- The Vine orders page shows 10 orders per page
-- Extract the current page, then click "Next" in the pagination, wait for it to load, and extract again
-- The background script deduplicates automatically — re-extracting a page you already captured will not create duplicates
-
-**To verify extraction is working under the hood:**
-- Open DevTools (F12) while on the orders page
-- Go to the **Console** tab
-- Look for `[Into the Grape Vine]` log lines — they will show how many orders were found and whether any were skipped as duplicates
-
-**If fields come back missing:**
-- Open DevTools → Elements tab → Ctrl+F
-- Search for `vvp-orders-table--row` to confirm the selector still exists
-- If Amazon has changed their markup, the relevant selectors are documented in `content.js` with instructions on how to update them
-
----
-
-## Project structure
+## Structure
 
 ```
 into-the-grape-vine/
+├── shared/             # Edit these — source of truth for the extension
+│   ├── content.js
+│   ├── background.js
+│   ├── popup.html
+│   └── popup.js
 ├── chrome/
-│   ├── manifest.json       # Chrome Manifest V3 config
-│   ├── content.js          # DOM extraction (runs on Vine orders page)
-│   ├── background.js       # Storage and deduplication
-│   ├── popup.html          # Extension popup UI
-│   └── popup.js            # Popup logic
+│   └── manifest.json
 ├── firefox/
-│   ├── manifest.json       # Firefox Manifest V2 config
-│   ├── content.js          # (identical to chrome/)
-│   ├── background.js       # (identical to chrome/)
-│   ├── popup.html          # (identical to chrome/)
-│   └── popup.js            # (identical to chrome/)
+│   └── manifest.json
+├── backend/            # Python sync scripts
+│   ├── dropbox_auth.py
+│   ├── setup_verify.py
+│   ├── requirements.txt
+│   └── .env.template
+├── build.sh
 └── README.md
 ```
 
+Only `manifest.json` differs per browser. All extension logic lives in `shared/`.
+
 ---
 
-## Roadmap
+## Extension setup
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Data extraction from Vine orders page | ✅ Complete |
-| 2 | Popup UI polish, pagination helper | 🔜 Next |
-| 3 | Python backend + Dropbox Excel sync | 🔜 Planned |
-| 4 | Daily/weekly auto-scheduler | 🔜 Planned |
-| 5 | LLM review generation (trained on your past reviews) | 🔜 Planned |
-| 6 | Firefox/Zen verification and polish | 🔜 Planned |
+**1. Build**
+
+Run after cloning, and again after any change to `shared/`:
+
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+**2. Install on Chrome**
+
+1. Go to `chrome://extensions`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** → select the `chrome/` folder
+
+**3. Install on Zen (Firefox)**
+
+1. Go to `about:debugging` → **This Firefox**
+2. Click **Load Temporary Add-on…** → select `firefox/manifest.json`
+
+> Temporary add-ons are removed when the browser closes. For a persistent install without publishing to the store, use Firefox Developer Edition with `xpinstall.signatures.required` set to `false` in `about:config`.
+
+---
+
+## Extension usage
+
+1. Go to [amazon.com/vine/orders](https://www.amazon.com/vine/orders) while logged in
+2. Click the 🍇 icon → **Extract this page**
+3. Paginate and repeat — duplicates are skipped automatically
+
+Open DevTools (F12) → Console for `[Into the Grape Vine]` log output if something looks off.
+
+---
+
+## Dropbox setup (one-time)
+
+**1. Create a Dropbox app**
+
+Go to [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) → **Create app**
+- API: Scoped access
+- Access type: Full Dropbox
+- Name: anything
+
+**2. Set permissions**
+
+In your app → **Permissions** tab, enable:
+- `files.content.read`
+- `files.content.write`
+
+Click **Submit**. Do this before generating tokens.
+
+**3. Get App key and App secret**
+
+Settings tab → copy both values.
+
+**4. Generate your refresh token**
+
+Paste this in your browser (replace `YOUR_APP_KEY`):
+
+```
+https://www.dropbox.com/oauth2/authorize?client_id=YOUR_APP_KEY&token_access_type=offline&response_type=code
+```
+
+Authorize → copy the authorization code Dropbox shows you (expires in minutes).
+
+Then run in terminal:
+
+```bash
+curl https://api.dropbox.com/oauth2/token \
+  -d code=YOUR_AUTHORIZATION_CODE \
+  -d grant_type=authorization_code \
+  -u YOUR_APP_KEY:YOUR_APP_SECRET
+```
+
+Copy the `refresh_token` value from the JSON response. This doesn't expire.
+
+**5. Create your `.env`**
+
+```bash
+cd backend
+cp .env.template .env
+```
+
+Fill in:
+```
+DROPBOX_APP_KEY=your_app_key
+DROPBOX_APP_SECRET=your_app_secret
+DROPBOX_REFRESH_TOKEN=your_refresh_token
+DROPBOX_FILE_PATH=/path/to/your/spreadsheet.xlsx
+```
+
+`DROPBOX_FILE_PATH` is the path inside your Dropbox root, e.g. `/Vine/vine_orders.xlsx`.
+
+**6. Install dependencies and verify**
+
+```bash
+cd backend
+pip install -r requirements.txt
+python setup_verify.py
+```
+
+A successful run prints your account name and confirms the file was found.
+
+---
+
+## .gitignore reminder
+
+Make sure `.env` is in your `.gitignore` — never commit credentials.
