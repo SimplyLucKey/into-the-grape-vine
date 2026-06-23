@@ -129,9 +129,11 @@ DROPBOX_FILE_PATH=/path/to/your/spreadsheet.xlsx
 
 ```bash
 cd backend
-pip install -r requirements.txt
-python setup_verify.py
+uv sync
+uv run python setup_verify.py
 ```
+
+If you don't have uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 A successful run prints your account name and confirms the file was found.
 
