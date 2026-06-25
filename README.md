@@ -17,10 +17,10 @@ into-the-grape-vine/
 │   └── manifest.json
 ├── firefox/
 │   └── manifest.json
-├── backend/            # Python sync scripts
+├── backend/
 │   ├── dropbox_auth.py
-│   ├── setup_verify.py
-│   ├── requirements.txt
+│   ├── dropbox_file.py
+│   ├── pyproject.toml
 │   └── .env.template
 ├── build.sh
 └── README.md
@@ -106,7 +106,7 @@ curl https://api.dropbox.com/oauth2/token \
   -u YOUR_APP_KEY:YOUR_APP_SECRET
 ```
 
-Copy the `refresh_token` value from the JSON response. This doesn't expire.
+Copy the `refresh_token` from the JSON response. This doesn't expire.
 
 **5. Create your `.env`**
 
@@ -123,22 +123,22 @@ DROPBOX_REFRESH_TOKEN=your_refresh_token
 DROPBOX_FILE_PATH=/path/to/your/spreadsheet.xlsx
 ```
 
-`DROPBOX_FILE_PATH` is the path inside your Dropbox root, e.g. `/Vine/vine_orders.xlsx`.
+`DROPBOX_FILE_PATH` is relative to your Dropbox root, e.g. `/Vine/vine_orders.xlsx`.
 
 **6. Install dependencies and verify**
 
 ```bash
 cd backend
 uv sync
-uv run python setup_verify.py
+uv run python dropbox_file.py
 ```
 
 If you don't have uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-A successful run prints your account name and confirms the file was found.
+A successful run prints your account name, then the column headers and first 5 rows of your spreadsheet.
 
 ---
 
 ## .gitignore reminder
 
-Make sure `.env` is in your `.gitignore` — never commit credentials.
+Make sure `backend/.env` is in your `.gitignore` — never commit credentials.
