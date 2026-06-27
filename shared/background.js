@@ -10,6 +10,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ ok: true });
   }
 
+  if (message.action === 'ACCOUNT_ORDERS_CAPTURED') {
+    handleAccountOrdersCaptured(message.data);
+    sendResponse({ ok: true });
+  }
+
   if (message.action === 'GET_QUEUE') {
     chrome.storage.local.get(['capturedOrders'], (r) => {
       sendResponse({ orders: r.capturedOrders ?? [] });
@@ -17,8 +22,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // keep channel open for async response
   }
 
+  if (message.action === 'GET_ACCOUNT_ORDERS') {
+    chrome.storage.local.get(['accountOrders'], (r) => {
+      sendResponse({ orders: r.accountOrders ?? [] });
+    });
+    return true;
+  }
+
   if (message.action === 'CLEAR_QUEUE') {
     chrome.storage.local.set({ capturedOrders: [] }, () => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (message.action === 'CLEAR_ACCOUNT_ORDERS') {
+    chrome.storage.local.set({ accountOrders: [] }, () => sendResponse({ ok: true }));
     return true;
   }
 });
@@ -41,6 +58,21 @@ async function handleCapturedData(newOrders) {
   console.log(`[Into the Grape Vine] +${fresh.length} new orders. Total: ${merged.length}.`);
 }
 
+async function handleAccountOrdersCaptured(newOrders) {
+  const existing = await getAccountOrders();
+  const existingKeys = new Set(existing.map((o) => o.asin ?? o.order_id));
+  const fresh = newOrders.filter((o) => !existingKeys.has(o.asin ?? o.order_id));
+
+  if (!fresh.length) {
+    console.log('[Into the Grape Vine] No new account orders — all already captured.');
+    return;
+  }
+
+  const merged = [...fresh, ...existing];
+  await setAccountOrders(merged);
+  console.log(`[Into the Grape Vine] +${fresh.length} new account orders. Total: ${merged.length}.`);
+}
+
 function getQueue() {
   return new Promise((resolve) => {
     chrome.storage.local.get(['capturedOrders'], (r) => resolve(r.capturedOrders ?? []));
@@ -50,5 +82,17 @@ function getQueue() {
 function setQueue(orders) {
   return new Promise((resolve) => {
     chrome.storage.local.set({ capturedOrders: orders }, resolve);
+  });
+}
+
+function getAccountOrders() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['accountOrders'], (r) => resolve(r.accountOrders ?? []));
+  });
+}
+
+function setAccountOrders(orders) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ accountOrders: orders }, resolve);
   });
 }
