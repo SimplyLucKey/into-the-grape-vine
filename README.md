@@ -232,7 +232,7 @@ Customize two settings in the popup to prevent wasting time on old/unavailable p
 - **Days back**: Only fetch prices for orders from the last X days (enter any number)
   - Default: 14 days
   - Old products often have no listing anymore
-- **Max items**: Limit how many items to fetch per run (10/25/50/100)
+- **Max items**: Limit how many items to fetch per run
   - Default: 50 items
   - Prevents long-running fetches
 
