@@ -38,6 +38,21 @@ const productPricesProgressEl  = document.getElementById('product-prices-progres
 const daysBackInput            = document.getElementById('days-back');
 const maxItemsInput            = document.getElementById('max-items');
 
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabName = btn.dataset.tab;
+
+    // Update active tab button
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Update active tab content
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+  });
+});
+
 (async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const url = tab?.url ?? '';
@@ -49,10 +64,13 @@ const maxItemsInput            = document.getElementById('max-items');
     setStatus('On Vine orders — ready to extract.');
     hintEl.textContent = 'Shows 10 orders per page. Paginate and extract each page to capture older orders.';
     btnExtractOrders.disabled = true;
+    // Switch to Vine tab
+    document.querySelector('.tab-btn[data-tab="vine"]').click();
   } else if (isOrders) {
     setStatus('On account orders — ready to extract.');
-    hintEl.textContent = 'Shows 10 orders per page. Paginate and extract each page to capture delivery dates.';
     btnExtractVine.disabled = true;
+    // Switch to Account tab
+    document.querySelector('.tab-btn[data-tab="account"]').click();
   } else {
     setStatus('Go to /vine/orders or /order-history to extract.', 'error');
     btnExtractVine.disabled = true;

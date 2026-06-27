@@ -19,6 +19,38 @@
     .status { font-size: 12px; color: #555; margin-bottom: 12px; min-height: 18px; line-height: 1.5; }
     .status.error { color: #c0392b; }
     .status.success { color: #27ae60; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      border-bottom: 2px solid #eee;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: #6b2d8b; }
+    .tab-btn.active {
+      color: #6b2d8b;
+      border-bottom-color: #6b2d8b;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
     .btn-row { margin-bottom: 12px; }
     .btn {
       display: inline-block; padding: 7px 14px; border: none;
@@ -47,53 +79,64 @@
   <div class="subtitle">Amazon Vine order tracker</div>
   <div id="status" class="status"></div>
 
-  <!-- Vine Orders Section -->
-  <div class="btn-row">
-    <button id="btn-extract" class="btn btn-primary">Extract Vine Orders</button>
-    <button id="btn-clear" class="btn btn-secondary">Clear</button>
-  </div>
-  <div class="queue-header">Vine orders (<span id="queue-count">0</span>)</div>
-  <div class="order-list" id="order-list">
-    <div class="empty">Nothing captured yet.</div>
+  <!-- Tabs Navigation -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="vine">Vine Orders</button>
+    <button class="tab-btn" data-tab="account">Account Orders</button>
+    <button class="tab-btn" data-tab="prices">Prices</button>
   </div>
 
-  <!-- Account Orders Section -->
-  <div class="btn-row" style="margin-top: 16px;">
-    <button id="btn-extract-orders" class="btn btn-primary">Extract Account Orders</button>
-    <button id="btn-clear-orders" class="btn btn-secondary">Clear</button>
-  </div>
-  <div class="queue-header">Account orders (<span id="account-count">0</span>)</div>
-  <div class="order-list" id="account-list">
-    <div class="empty">Nothing captured yet.</div>
+  <!-- Vine Orders Tab -->
+  <div id="tab-vine" class="tab-content active">
+    <div class="btn-row">
+      <button id="btn-extract" class="btn btn-primary">Extract Vine Orders</button>
+      <button id="btn-clear" class="btn btn-secondary">Clear</button>
+    </div>
+    <div class="queue-header">Vine orders (<span id="queue-count">0</span>)</div>
+    <div class="order-list" id="order-list">
+      <div class="empty">Nothing captured yet.</div>
+    </div>
+    <div class="page-hint" id="page-hint"></div>
   </div>
 
-  <!-- Sync Delivery Dates Section -->
-  <div class="queue-header" style="margin-top: 16px;">Sync Delivery Dates</div>
-  <div class="btn-row">
-    <button id="btn-sync-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
-    <button id="btn-sync" class="btn btn-primary" style="width: 48%;">🔄 Sync Dates</button>
-  </div>
-  <div class="progress" id="sync-progress"></div>
+  <!-- Account Orders Tab -->
+  <div id="tab-account" class="tab-content">
+    <div class="btn-row">
+      <button id="btn-extract-orders" class="btn btn-primary">Extract Account Orders</button>
+      <button id="btn-clear-orders" class="btn btn-secondary">Clear</button>
+    </div>
+    <div class="queue-header">Account orders (<span id="account-count">0</span>)</div>
+    <div class="order-list" id="account-list">
+      <div class="empty">Nothing captured yet.</div>
+    </div>
 
-  <!-- Fetch Product Prices Section -->
-  <div class="queue-header" style="margin-top: 16px;">Fetch Product Prices</div>
-  <div style="margin-bottom: 8px; font-size: 11px; color: #666;">
-    <label style="display: inline-block; margin-right: 12px;">
-      Days back:
-      <input id="days-back" type="number" value="14" min="1" style="font-size: 11px; padding: 2px; width: 50px;">
-    </label>
-    <label style="display: inline-block;">
-      Max items:
-      <input id="max-items" type="number" value="50" min="1" style="font-size: 11px; padding: 2px; width: 50px;">
-    </label>
+    <div class="queue-header" style="margin-top: 16px;">Sync Delivery Dates</div>
+    <div class="btn-row">
+      <button id="btn-sync-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
+      <button id="btn-sync" class="btn btn-primary" style="width: 48%;">🔄 Sync Dates</button>
+    </div>
+    <div class="progress" id="sync-progress"></div>
   </div>
-  <div class="btn-row">
-    <button id="btn-product-prices-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
-    <button id="btn-product-prices" class="btn btn-primary" style="width: 48%;">💰 Fetch Prices</button>
-  </div>
-  <div class="progress" id="product-prices-progress"></div>
 
-  <div class="page-hint" id="page-hint"></div>
+  <!-- Prices Tab -->
+  <div id="tab-prices" class="tab-content">
+    <div class="queue-header">Fetch Product Prices</div>
+    <div style="margin-bottom: 8px; font-size: 11px; color: #666;">
+      <label style="display: inline-block; margin-right: 12px;">
+        Days back:
+        <input id="days-back" type="number" value="14" min="1" style="font-size: 11px; padding: 2px; width: 50px;">
+      </label>
+      <label style="display: inline-block;">
+        Max items:
+        <input id="max-items" type="number" value="50" min="1" style="font-size: 11px; padding: 2px; width: 50px;">
+      </label>
+    </div>
+    <div class="btn-row">
+      <button id="btn-product-prices-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
+      <button id="btn-product-prices" class="btn btn-primary" style="width: 48%;">💰 Fetch Prices</button>
+    </div>
+    <div class="progress" id="product-prices-progress"></div>
+  </div>
 
   <script src="popup.js"></script>
 </body>
