@@ -301,6 +301,7 @@ async function loadAccountOrders() {
 
   accountListEl.innerHTML = orders.map((accountOrder) => `
     <div class="order-row">
+      <img class="order-thumb" src="${escapeHtml(accountOrder.thumbnail ?? '')}" alt="">
       <div class="order-info">
         <div class="order-name" title="${escapeHtml(accountOrder.name ?? '')}">${escapeHtml(accountOrder.name ?? accountOrder.asin ?? 'Unknown')}</div>
         <div class="order-meta">

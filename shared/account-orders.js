@@ -61,6 +61,10 @@ function extractAccountOrders() {
         const asin = url ? extractASIN(url) : null; // from utils.js
         const name = box.querySelector('.yohtmlc-product-title a')?.textContent?.trim() ?? null;
 
+        // Extract thumbnail image (look for Amazon CDN images)
+        const imgEl = box.querySelector('img[src*="media-amazon.com"]');
+        const thumbnail = imgEl?.src || null;
+
         // Order ID is at the card level, not per shipment
         const orderId = extractOrderID(card);
 
@@ -68,6 +72,7 @@ function extractAccountOrders() {
           asin,
           name,
           url,
+          thumbnail,
           order_id: orderId,
           delivery_status: isCancelled ? 'cancelled' : (isDelivered ? 'delivered' : 'other'),
           delivery_date: deliveryDate,
