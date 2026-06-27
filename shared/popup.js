@@ -27,7 +27,12 @@ const accountListEl     = document.getElementById('account-list');
 const btnExtractOrders  = document.getElementById('btn-extract-orders');
 const btnClearOrders    = document.getElementById('btn-clear-orders');
 
-// Sync buttons
+// Vine sync buttons
+const btnVineSync           = document.getElementById('btn-vine-sync');
+const btnVineSyncDryRun     = document.getElementById('btn-vine-sync-dryrun');
+const vineSyncProgressEl    = document.getElementById('vine-sync-progress');
+
+// Account sync buttons
 const btnSync           = document.getElementById('btn-sync');
 const btnSyncDryRun     = document.getElementById('btn-sync-dryrun');
 
@@ -131,8 +136,8 @@ btnClearOrders.addEventListener('click', async () => {
   setStatus('Account orders cleared.');
 });
 
-// Helper function for sync (supports dry-run)
-async function performSync(dryRun = false) {
+// Helper function for syncing delivery dates to Dropbox (supports dry-run)
+async function performDeliveryDatesSync(dryRun = false) {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_ACCOUNT_ORDERS' });
 
   if (!orders.length) {
@@ -197,14 +202,79 @@ async function performSync(dryRun = false) {
   activeBtn.textContent = dryRun ? '🔍 Preview Changes' : '🔄 Sync to Dropbox';
 }
 
-// Dry-run sync (preview only)
-btnSyncDryRun.addEventListener('click', () => performSync(true));
+// Helper function for syncing Vine orders to Dropbox (supports dry-run)
+async function performVineOrdersSync(dryRun = false) {
+  const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });
 
-// Real sync
-btnSync.addEventListener('click', () => performSync(false));
+  if (!orders.length) {
+    setStatus('No Vine orders to sync. Extract some orders first.', 'error');
+    return;
+  }
 
-// Helper function for product price fetching
-async function fetchProductPrices(dryRun = false) {
+  const activeBtn = dryRun ? btnVineSyncDryRun : btnVineSync;
+  const otherBtn = dryRun ? btnVineSync : btnVineSyncDryRun;
+
+  activeBtn.disabled = true;
+  otherBtn.disabled = true;
+  activeBtn.textContent = dryRun ? '⏳ Previewing...' : '⏳ Syncing...';
+  setStatus('');
+  vineSyncProgressEl.textContent = 'Connecting to backend...';
+
+  try {
+    const url = `http://localhost:8000/sync-vine-orders${dryRun ? '?dry_run=true' : ''}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vine_orders: orders }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Vine sync failed');
+    }
+
+    const result = await response.json();
+
+    if (result.added === 0) {
+      setStatus(`No new orders to add — ${result.skipped} already in spreadsheet.`, 'success');
+    } else {
+      let prefix = dryRun ? 'Preview: Would add' : 'Synced!';
+      let message = `${prefix} ${result.added} new orders`;
+      if (result.skipped > 0) {
+        message += `, ${result.skipped} already present`;
+      }
+      setStatus(message, 'success');
+
+      if (result.new_items?.length > 0) {
+        console.log('[Into the Grape Vine] New items to add:', result.new_items);
+      }
+    }
+    vineSyncProgressEl.textContent = '';
+  } catch (err) {
+    if (err.message.includes('fetch')) {
+      setStatus('Backend not running. Start server: ./start-server.sh', 'error');
+    } else {
+      setStatus(`Vine sync failed: ${err.message}`, 'error');
+    }
+    vineSyncProgressEl.textContent = '';
+    console.error('[Into the Grape Vine] Vine sync error:', err);
+  }
+
+  activeBtn.disabled = false;
+  otherBtn.disabled = false;
+  activeBtn.textContent = dryRun ? '🔍 Preview' : '🔄 Sync to Dropbox';
+}
+
+// Vine sync buttons
+btnVineSyncDryRun.addEventListener('click', () => performVineOrdersSync(true));
+btnVineSync.addEventListener('click', () => performVineOrdersSync(false));
+
+// Account delivery date sync buttons
+btnSyncDryRun.addEventListener('click', () => performDeliveryDatesSync(true));
+btnSync.addEventListener('click', () => performDeliveryDatesSync(false));
+
+// Helper function for fetching product prices from Amazon
+async function performProductPricesFetch(dryRun = false) {
   const activeBtn = dryRun ? btnProductPricesDryRun : btnProductPrices;
   const otherBtn = dryRun ? btnProductPrices : btnProductPricesDryRun;
 
@@ -266,8 +336,8 @@ async function fetchProductPrices(dryRun = false) {
 }
 
 // Product price fetch buttons
-btnProductPricesDryRun.addEventListener('click', () => fetchProductPrices(true));
-btnProductPrices.addEventListener('click', () => fetchProductPrices(false));
+btnProductPricesDryRun.addEventListener('click', () => performProductPricesFetch(true));
+btnProductPrices.addEventListener('click', () => performProductPricesFetch(false));
 
 async function loadVineOrders() {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });
