@@ -7,7 +7,17 @@
   "content_scripts": [
     {
       "matches": ["https://www.amazon.com/vine/orders*"],
-      "js": ["content.js"],
+      "js": ["utils.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.amazon.com/your-orders*",
+        "https://www.amazon.com/gp/your-account/order-history*",
+        "https://www.amazon.com/gp/css/order-history*",
+        "https://www.amazon.com/gp/*/order-history*"
+      ],
+      "js": ["utils.js", "content-orders.js"],
       "run_at": "document_idle"
     }
   ],
