@@ -31,6 +31,13 @@ const btnClearOrders    = document.getElementById('btn-clear-orders');
 const btnSync           = document.getElementById('btn-sync');
 const btnSyncDryRun     = document.getElementById('btn-sync-dryrun');
 
+// Price fetch buttons and settings
+const btnPrices         = document.getElementById('btn-prices');
+const btnPricesDryRun   = document.getElementById('btn-prices-dryrun');
+const pricesProgressEl  = document.getElementById('prices-progress');
+const daysBackInput     = document.getElementById('days-back');
+const maxItemsInput     = document.getElementById('max-items');
+
 (async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const url = tab?.url ?? '';
@@ -177,6 +184,72 @@ btnSyncDryRun.addEventListener('click', () => performSync(true));
 
 // Real sync
 btnSync.addEventListener('click', () => performSync(false));
+
+// Helper function for price fetching
+async function fetchPrices(dryRun = false) {
+  const activeBtn = dryRun ? btnPricesDryRun : btnPrices;
+  const otherBtn = dryRun ? btnPrices : btnPricesDryRun;
+
+  activeBtn.disabled = true;
+  otherBtn.disabled = true;
+  activeBtn.textContent = dryRun ? '⏳ Checking...' : '⏳ Fetching...';
+  setStatus('');
+  pricesProgressEl.textContent = 'Connecting to backend...';
+
+  try {
+    // Get user settings
+    const daysBack = parseInt(daysBackInput.value, 10);
+    const maxItems = parseInt(maxItemsInput.value, 10);
+
+    const params = new URLSearchParams({
+      dry_run: dryRun.toString(),
+      days_back: daysBack.toString(),
+      max_items: maxItems.toString(),
+    });
+
+    const url = `http://localhost:8000/fetch-prices?${params}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Price fetch failed');
+    }
+
+    const result = await response.json();
+
+    if (result.fetched === 0 && result.failed === 0 && result.skipped === 0) {
+      setStatus('All items already have prices!', 'success');
+    } else if (dryRun) {
+      setStatus(`Preview: Would fetch prices for ${result.skipped} items`, 'success');
+    } else {
+      let message = `Fetched ${result.fetched} prices`;
+      if (result.failed > 0) {
+        message += `, ${result.failed} failed`;
+      }
+      setStatus(message, 'success');
+    }
+    pricesProgressEl.textContent = '';
+  } catch (err) {
+    if (err.message.includes('fetch')) {
+      setStatus('Backend not running. Start server: ./start-server.sh', 'error');
+    } else {
+      setStatus(`Price fetch failed: ${err.message}`, 'error');
+    }
+    pricesProgressEl.textContent = '';
+    console.error('[Into the Grape Vine] Price fetch error:', err);
+  }
+
+  activeBtn.disabled = false;
+  otherBtn.disabled = false;
+  activeBtn.textContent = dryRun ? '🔍 Preview' : '💰 Fetch Prices';
+}
+
+// Price fetch buttons
+btnPricesDryRun.addEventListener('click', () => fetchPrices(true));
+btnPrices.addEventListener('click', () => fetchPrices(false));
 
 async function loadVineOrders() {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });
