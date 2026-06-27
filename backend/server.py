@@ -75,6 +75,8 @@ class SyncResponse(BaseModel):
     filled: int
     cancelled: int
     cancelled_items: list[dict[str, str]]
+    dry_run: bool = False
+    changes: list[dict[str, str]] = []
 
 
 def parse_delivery_date(order: AccountOrder) -> Any:
@@ -89,15 +91,17 @@ def parse_delivery_date(order: AccountOrder) -> Any:
 def sync_delivery_dates_to_sheet(
     sheet: Worksheet,
     account_orders: list[AccountOrder],
-) -> tuple[int, int, list[dict[str, str]]]:
+    dry_run: bool = False,
+) -> tuple[int, int, list[dict[str, str]], list[dict[str, str]]]:
     """Update blank delivered_date cells based on account orders.
 
     Args:
         sheet: The openpyxl inventory worksheet.
         account_orders: List of account orders from extension.
+        dry_run: If True, don't actually modify the sheet, just report what would change.
 
     Returns:
-        Tuple of (filled_count, cancelled_count, cancelled_items).
+        Tuple of (filled_count, cancelled_count, cancelled_items, changes).
     """
     # Index by ASIN for fast lookup
     orders_by_asin: dict[str, AccountOrder] = {}
@@ -108,6 +112,7 @@ def sync_delivery_dates_to_sheet(
     filled = 0
     cancelled = 0
     cancelled_items: list[dict[str, str]] = []
+    changes: list[dict[str, str]] = []
 
     # Iterate through Excel rows (skip header at row 1)
     for row_idx in range(2, sheet.max_row + 1):
@@ -130,35 +135,56 @@ def sync_delivery_dates_to_sheet(
         if order.delivery_status == "delivered":
             delivery_date = parse_delivery_date(order)
             if delivery_date:
-                sheet.cell(row=row_idx, column=_COL_DELIVERED_DATE, value=delivery_date)
                 filled += 1
-                logger.info(
-                    "Row %d (%s): Filled delivery date %s",
-                    row_idx,
-                    asin,
-                    delivery_date.strftime("%Y-%m-%d"),
-                )
+                date_str = delivery_date.strftime("%Y-%m-%d")
+                changes.append({
+                    "row": str(row_idx),
+                    "asin": asin,
+                    "action": f"fill delivery date: {date_str}",
+                    "product": name or "Unknown",
+                })
+
+                if not dry_run:
+                    sheet.cell(row=row_idx, column=_COL_DELIVERED_DATE, value=delivery_date)
+
+                action = "Would fill" if dry_run else "Filled"
+                logger.info("Row %d (%s): %s delivery date %s", row_idx, asin, action, date_str)
 
         elif order.delivery_status == "cancelled":
             cancelled += 1
             cancelled_items.append({"asin": asin, "name": name or "Unknown"})
-            logger.warning("Row %d (%s): Order cancelled", row_idx, asin)
+            changes.append({
+                "row": str(row_idx),
+                "asin": asin,
+                "action": "mark as cancelled (manual deletion recommended)",
+                "product": name or "Unknown",
+            })
+            log_msg = f"Row {row_idx} ({asin}): Order cancelled"
+            logger.warning(log_msg)
 
-    return filled, cancelled, cancelled_items
+    return filled, cancelled, cancelled_items, changes
 
 
 @app.post("/sync-delivery-dates", response_model=SyncResponse)
-async def sync_delivery_dates(request: SyncRequest) -> SyncResponse:
+async def sync_delivery_dates(request: SyncRequest, dry_run: bool = False) -> SyncResponse:
     """Sync delivery dates from account orders to Dropbox Excel file.
 
     This endpoint:
     1. Downloads the Excel file from Dropbox
     2. Matches account orders by ASIN
     3. Fills blank delivered_date cells for delivered items
-    4. Uploads the updated file back to Dropbox
+    4. Uploads the updated file back to Dropbox (unless dry_run=true)
+
+    Args:
+        request: Contains list of account orders to sync
+        dry_run: If True, only report what would change without modifying the file
     """
     try:
-        logger.info("Received %d account orders to sync", len(request.account_orders))
+        logger.info(
+            "Received %d account orders to sync (dry_run=%s)",
+            len(request.account_orders),
+            dry_run,
+        )
 
         # Get Dropbox client
         client: dropbox.Dropbox = get_client()
@@ -183,9 +209,10 @@ async def sync_delivery_dates(request: SyncRequest) -> SyncResponse:
         sheet: Worksheet = workbook[INVENTORY_SHEET]
 
         # Sync delivery dates
-        filled, cancelled, cancelled_items = sync_delivery_dates_to_sheet(
+        filled, cancelled, cancelled_items, changes = sync_delivery_dates_to_sheet(
             sheet=sheet,
             account_orders=request.account_orders,
+            dry_run=dry_run,
         )
 
         if filled == 0 and cancelled == 0:
@@ -195,17 +222,24 @@ async def sync_delivery_dates(request: SyncRequest) -> SyncResponse:
                 filled=0,
                 cancelled=0,
                 cancelled_items=[],
+                dry_run=dry_run,
+                changes=[],
             )
 
-        # Upload updated workbook
-        upload_workbook(client=client, workbook=workbook, file_path=file_path)
-        logger.info("Sync complete: %d filled, %d cancelled", filled, cancelled)
+        # Upload updated workbook (unless dry run)
+        if not dry_run:
+            upload_workbook(client=client, workbook=workbook, file_path=file_path)
+            logger.info("Sync complete: %d filled, %d cancelled", filled, cancelled)
+        else:
+            logger.info("DRY RUN: Would fill %d, would mark %d as cancelled", filled, cancelled)
 
         return SyncResponse(
             success=True,
             filled=filled,
             cancelled=cancelled,
             cancelled_items=cancelled_items,
+            dry_run=dry_run,
+            changes=changes,
         )
 
     except Exception as e:

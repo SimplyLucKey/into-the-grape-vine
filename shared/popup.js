@@ -27,8 +27,9 @@ const accountListEl     = document.getElementById('account-list');
 const btnExtractOrders  = document.getElementById('btn-extract-orders');
 const btnClearOrders    = document.getElementById('btn-clear-orders');
 
-// Sync button
+// Sync buttons
 const btnSync           = document.getElementById('btn-sync');
+const btnSyncDryRun     = document.getElementById('btn-sync-dryrun');
 
 (async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -105,8 +106,8 @@ btnClearOrders.addEventListener('click', async () => {
   setStatus('Account orders cleared.');
 });
 
-// Sync to Dropbox via backend
-btnSync.addEventListener('click', async () => {
+// Helper function for sync (supports dry-run)
+async function performSync(dryRun = false) {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_ACCOUNT_ORDERS' });
 
   if (!orders.length) {
@@ -114,14 +115,18 @@ btnSync.addEventListener('click', async () => {
     return;
   }
 
-  btnSync.disabled = true;
-  btnSync.textContent = '⏳ Syncing...';
+  const activeBtn = dryRun ? btnSyncDryRun : btnSync;
+  const otherBtn = dryRun ? btnSync : btnSyncDryRun;
+
+  activeBtn.disabled = true;
+  otherBtn.disabled = true;
+  activeBtn.textContent = dryRun ? '⏳ Previewing...' : '⏳ Syncing...';
   setStatus('');
   syncProgressEl.textContent = 'Connecting to backend...';
 
   try {
-    // Call Python backend instead of Dropbox directly
-    const response = await fetch('http://localhost:8000/sync-delivery-dates', {
+    const url = `http://localhost:8000/sync-delivery-dates${dryRun ? '?dry_run=true' : ''}`;
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_orders: orders }),
@@ -137,12 +142,16 @@ btnSync.addEventListener('click', async () => {
     if (result.filled === 0 && result.cancelled === 0) {
       setStatus('No updates needed — all delivery dates already filled.', 'success');
     } else {
-      let message = `Synced! ${result.filled} delivery dates filled`;
+      let prefix = dryRun ? 'Preview: Would fill' : 'Synced!';
+      let message = `${prefix} ${result.filled} delivery dates`;
       if (result.cancelled > 0) {
         message += `, ${result.cancelled} cancelled items found`;
       }
       setStatus(message, 'success');
 
+      if (result.changes?.length > 0) {
+        console.log('[Into the Grape Vine] Changes:', result.changes);
+      }
       if (result.cancelled_items?.length > 0) {
         console.log('[Into the Grape Vine] Cancelled items:', result.cancelled_items);
       }
@@ -150,7 +159,7 @@ btnSync.addEventListener('click', async () => {
     syncProgressEl.textContent = '';
   } catch (err) {
     if (err.message.includes('fetch')) {
-      setStatus('Backend not running. Start server with: uv run python backend/server.py', 'error');
+      setStatus('Backend not running. Start server: ./start-server.sh', 'error');
     } else {
       setStatus(`Sync failed: ${err.message}`, 'error');
     }
@@ -158,9 +167,16 @@ btnSync.addEventListener('click', async () => {
     console.error('[Into the Grape Vine] Sync error:', err);
   }
 
-  btnSync.disabled = false;
-  btnSync.textContent = '🔄 Sync Delivery Dates to Dropbox';
-});
+  activeBtn.disabled = false;
+  otherBtn.disabled = false;
+  activeBtn.textContent = dryRun ? '🔍 Preview Changes' : '🔄 Sync to Dropbox';
+}
+
+// Dry-run sync (preview only)
+btnSyncDryRun.addEventListener('click', () => performSync(true));
+
+// Real sync
+btnSync.addEventListener('click', () => performSync(false));
 
 async function loadVineOrders() {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });

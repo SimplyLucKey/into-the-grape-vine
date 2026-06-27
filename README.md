@@ -180,16 +180,25 @@ Go to [amazon.com/order-history](https://www.amazon.com/gp/css/order-history) an
 - Click **Extract Account Orders**
 - Paginate through all pages to capture delivery dates
 
-**3. Sync with one click**
+**3. Sync (with safety preview)**
 
-Click **🔄 Sync Delivery Dates to Dropbox**
+Two buttons available:
+
+**🔍 Preview Changes** (Dry-Run)
+- Shows exactly what would be changed
+- Doesn't modify your Excel file
+- Check console (F12) for detailed list of changes
+
+**🔄 Sync to Dropbox** (Real Sync)
+- Actually updates your Excel file
+- Use after verifying the preview
 
 The extension will:
 - Send account orders to your local backend
 - Backend downloads Excel file from Dropbox
 - Matches items by ASIN (extracted from URL column)
 - Fills blank `delivered_date` cells for delivered items
-- Uploads updated file back to Dropbox
+- Uploads updated file back to Dropbox (unless dry-run)
 - Shows how many dates were filled
 
 **Notes:**
@@ -198,6 +207,7 @@ The extension will:
 - Skips rows that already have a delivery date
 - Warns about cancelled items (delete manually from spreadsheet)
 - Your Dropbox credentials stay secure in `.env` file
+- **Always preview first!** Use dry-run mode before actual sync
 
 ---
 
