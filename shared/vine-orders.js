@@ -1,7 +1,10 @@
 /**
- * content.js
- * Runs on amazon.com/vine/orders. Reads the orders table and extracts data
- * from your active logged-in session — no credentials needed.
+ * vine-orders.js
+ * Content script that runs on amazon.com/vine/orders page.
+ * Extracts Vine order data from the orders table.
+ *
+ * Captures: ASIN, product name/URL, order date, FMV, order ID, thumbnail
+ * Sends to: background.js via VINE_ORDERS_CAPTURED message
  *
  * Selectors verified against live /vine/orders HTML (June 2026):
  *   tr.vvp-orders-table--row              one row per order
@@ -61,25 +64,29 @@ function extractVineOrders() {
     }
   });
 
-  console.log(`[Into the Grape Vine] Extracted ${results.length} orders.`);
+  console.log(`[Into the Grape Vine] Extracted ${results.length} Vine orders.`);
   return results;
 }
 
 (function main() {
   if (!isVineOrdersPage()) return;
   setTimeout(() => {
-    const data = extractVineOrders();
-    if (data.length) chrome.runtime.sendMessage({ action: 'DATA_CAPTURED', data });
+    const vineOrders = extractVineOrders();
+    if (vineOrders.length) {
+      chrome.runtime.sendMessage({ action: 'VINE_ORDERS_CAPTURED', data: vineOrders });
+    }
   }, 1000);
 })();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action !== 'MANUAL_EXTRACT') return;
+  if (message.action !== 'MANUAL_EXTRACT_VINE') return;
+
   if (!isVineOrdersPage()) {
     sendResponse({ ok: false, reason: 'Navigate to amazon.com/vine/orders first.' });
     return;
   }
-  const data = extractVineOrders();
-  chrome.runtime.sendMessage({ action: 'DATA_CAPTURED', data });
-  sendResponse({ ok: true, count: data.length });
+
+  const vineOrders = extractVineOrders();
+  chrome.runtime.sendMessage({ action: 'VINE_ORDERS_CAPTURED', data: vineOrders });
+  sendResponse({ ok: true, count: vineOrders.length });
 });
