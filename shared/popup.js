@@ -27,13 +27,6 @@ const accountListEl     = document.getElementById('account-list');
 const btnExtractOrders  = document.getElementById('btn-extract-orders');
 const btnClearOrders    = document.getElementById('btn-clear-orders');
 
-// Dropbox settings
-const settingsToggle    = document.getElementById('settings-toggle');
-const settingsPanel     = document.getElementById('settings-panel');
-const dropboxTokenInput = document.getElementById('dropbox-token'); // References <input id="dropbox-token">
-const dropboxPathInput  = document.getElementById('dropbox-path');  // References <input id="dropbox-path">
-const btnSaveSettings   = document.getElementById('btn-save-settings');
-
 // Sync button
 const btnSync           = document.getElementById('btn-sync');
 
@@ -60,35 +53,7 @@ const btnSync           = document.getElementById('btn-sync');
 
   await loadVineOrders();
   await loadAccountOrders();
-  await loadDropboxSettings();
 })();
-
-// Settings toggle
-settingsToggle.addEventListener('click', () => {
-  settingsPanel.classList.toggle('visible');
-});
-
-// Load Dropbox settings from storage
-async function loadDropboxSettings() {
-  const settings = await getDropboxSettings();
-  if (settings.token) dropboxTokenInput.value = settings.token;
-  if (settings.filePath) dropboxPathInput.value = settings.filePath;
-}
-
-// Save settings
-btnSaveSettings.addEventListener('click', async () => {
-  const token = dropboxTokenInput.value.trim();
-  const path = dropboxPathInput.value.trim();
-
-  if (!token || !path) {
-    setStatus('Please fill in both Dropbox token and file path.', 'error');
-    return;
-  }
-
-  await saveDropboxSettings(token, path);
-  setStatus('Dropbox settings saved!', 'success');
-  settingsPanel.classList.remove('visible');
-});
 
 btnExtractVine.addEventListener('click', async () => {
   btnExtractVine.disabled = true;
@@ -140,7 +105,7 @@ btnClearOrders.addEventListener('click', async () => {
   setStatus('Account orders cleared.');
 });
 
-// Sync to Dropbox
+// Sync to Dropbox via backend
 btnSync.addEventListener('click', async () => {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_ACCOUNT_ORDERS' });
 
@@ -152,12 +117,22 @@ btnSync.addEventListener('click', async () => {
   btnSync.disabled = true;
   btnSync.textContent = '⏳ Syncing...';
   setStatus('');
-  syncProgressEl.textContent = '';
+  syncProgressEl.textContent = 'Connecting to backend...';
 
   try {
-    const result = await syncDeliveryDates(orders, (progress) => {
-      syncProgressEl.textContent = progress;
+    // Call Python backend instead of Dropbox directly
+    const response = await fetch('http://localhost:8000/sync-delivery-dates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_orders: orders }),
     });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Sync failed');
+    }
+
+    const result = await response.json();
 
     if (result.filled === 0 && result.cancelled === 0) {
       setStatus('No updates needed — all delivery dates already filled.', 'success');
@@ -168,13 +143,17 @@ btnSync.addEventListener('click', async () => {
       }
       setStatus(message, 'success');
 
-      if (result.cancelledItems.length > 0) {
-        console.log('[Into the Grape Vine] Cancelled items:', result.cancelledItems);
+      if (result.cancelled_items?.length > 0) {
+        console.log('[Into the Grape Vine] Cancelled items:', result.cancelled_items);
       }
     }
     syncProgressEl.textContent = '';
   } catch (err) {
-    setStatus(`Sync failed: ${err.message}`, 'error');
+    if (err.message.includes('fetch')) {
+      setStatus('Backend not running. Start server with: uv run python backend/server.py', 'error');
+    } else {
+      setStatus(`Sync failed: ${err.message}`, 'error');
+    }
     syncProgressEl.textContent = '';
     console.error('[Into the Grape Vine] Sync error:', err);
   }
