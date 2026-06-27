@@ -9,8 +9,11 @@ Come explore into the grape vine in the Amazons. A personal browser extension th
 ```
 into-the-grape-vine/
 ├── shared/             # Edit these — source of truth for the extension
-│   ├── content.js
-│   ├── background.js
+│   ├── vine-orders.js       # Scrapes /vine/orders page
+│   ├── account-orders.js    # Scrapes /order-history page
+│   ├── utils.js             # Shared utility functions
+│   ├── dropbox-sync.js      # One-click Dropbox sync
+│   ├── background.js        # Extension background service
 │   ├── popup.html
 │   └── popup.js
 ├── chrome/
@@ -19,7 +22,8 @@ into-the-grape-vine/
 │   └── manifest.json
 ├── backend/
 │   ├── dropbox_auth.py
-│   ├── dropbox_file.py
+│   ├── dropbox_upsert.py
+│   ├── dropbox_utils.py
 │   ├── pyproject.toml
 │   └── .env.template
 ├── build.sh
@@ -58,9 +62,19 @@ chmod +x build.sh
 
 ## Extension usage
 
+### Capturing Vine orders
+
 1. Go to [amazon.com/vine/orders](https://www.amazon.com/vine/orders) while logged in
-2. Click the 🍇 icon → **Extract this page**
+2. Click the 🍇 icon → **Extract Vine Orders**
 3. Paginate and repeat — duplicates are skipped automatically
+
+### Capturing Account orders
+
+1. Go to [amazon.com/your-orders](https://www.amazon.com/your-orders) while logged in
+2. Click the 🍇 icon → **Extract Account Orders**
+3. Paginate through all pages to capture delivery dates
+4. Click **Export JSON** to download the data
+5. Run the sync script (see below) to update your spreadsheet
 
 Open DevTools (F12) → Console for `[Into the Grape Vine]` log output if something looks off.
 
@@ -136,6 +150,54 @@ uv run python dropbox_file.py
 If you don't have uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 A successful run prints your account name, then the column headers and first 5 rows of your spreadsheet.
+
+---
+
+## Syncing delivery dates
+
+The extension calls a Python backend server to sync data (keeps credentials secure).
+
+**1. Start the backend server**
+
+```bash
+./start-server.sh
+```
+
+Or manually:
+```bash
+cd backend
+uv sync  # First time only, installs dependencies
+uv run python server.py
+```
+
+Server starts on <http://localhost:8000>
+
+Keep this terminal window open while using the extension.
+
+**2. Extract account orders**
+
+Go to [amazon.com/order-history](https://www.amazon.com/gp/css/order-history) and:
+- Click **Extract Account Orders**
+- Paginate through all pages to capture delivery dates
+
+**3. Sync with one click**
+
+Click **🔄 Sync Delivery Dates to Dropbox**
+
+The extension will:
+- Send account orders to your local backend
+- Backend downloads Excel file from Dropbox
+- Matches items by ASIN (extracted from URL column)
+- Fills blank `delivered_date` cells for delivered items
+- Uploads updated file back to Dropbox
+- Shows how many dates were filled
+
+**Notes:**
+- Backend server must be running (localhost:8000)
+- Only updates rows where `delivered_date` is currently blank
+- Skips rows that already have a delivery date
+- Warns about cancelled items (delete manually from spreadsheet)
+- Your Dropbox credentials stay secure in `.env` file
 
 ---
 
