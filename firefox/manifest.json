@@ -8,8 +8,7 @@
     "alarms",
     "activeTab",
     "https://www.amazon.com/*",
-    "https://content.dropboxapi.com/*",
-    "https://api.dropboxapi.com/*"
+    "http://localhost:8000/*"
   ],
   "content_scripts": [
     {
