@@ -26,7 +26,10 @@ from dropbox_upsert import (
     _COL_ORDER_DATE,
     _COL_PRICE,
     _COL_URL,
+    append_orders_to_sheet,
+    build_new_rows,
     extract_asin,
+    get_existing_asins,
 )
 from dropbox_utils import download_workbook, get_client, upload_workbook
 from fetch_prices import fetch_multiple_prices
@@ -52,6 +55,20 @@ app.add_middleware(
 )
 
 
+class VineOrder(BaseModel):
+    """Vine order data from extension."""
+
+    asin: str | None
+    name: str | None
+    url: str | None
+    thumbnail: str | None
+    fmv: float | None
+    order_date: str | None
+    order_timestamp: int | None
+    order_id: str | None
+    captured_at: str
+
+
 class AccountOrder(BaseModel):
     """Account order data from extension."""
 
@@ -69,6 +86,22 @@ class SyncRequest(BaseModel):
     """Request body for sync endpoint."""
 
     account_orders: list[AccountOrder]
+
+
+class SyncVineOrdersRequest(BaseModel):
+    """Request body for sync-vine-orders endpoint."""
+
+    vine_orders: list[VineOrder]
+
+
+class SyncVineOrdersResponse(BaseModel):
+    """Response from sync-vine-orders endpoint."""
+
+    success: bool
+    added: int
+    skipped: int
+    dry_run: bool = False
+    new_items: list[dict[str, str]] = []
 
 
 class SyncResponse(BaseModel):
@@ -166,6 +199,104 @@ def sync_delivery_dates_to_sheet(
             logger.warning(log_msg)
 
     return filled, cancelled, cancelled_items, changes
+
+
+@app.post("/sync-vine-orders", response_model=SyncVineOrdersResponse)
+async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False) -> SyncVineOrdersResponse:
+    """Sync Vine orders to Dropbox Excel file.
+
+    This endpoint:
+    1. Downloads the Excel file from Dropbox
+    2. Checks which ASINs are already present
+    3. Appends new Vine orders (order_date, url, name, FMV)
+    4. Uploads the updated file back to Dropbox (unless dry_run=true)
+
+    Args:
+        request: Contains list of Vine orders to sync
+        dry_run: If True, only report what would change without modifying the file
+    """
+    try:
+        logger.info(
+            "Received %d Vine orders to sync (dry_run=%s)",
+            len(request.vine_orders),
+            dry_run,
+        )
+
+        # Get Dropbox client
+        client: dropbox.Dropbox = get_client()
+        account = client.users_get_current_account()
+        logger.info("Connected to Dropbox as %s", account.name.display_name)
+
+        # Download workbook
+        import os
+
+        file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
+        if not file_path:
+            raise HTTPException(status_code=500, detail="DROPBOX_FILE_PATH not configured")
+
+        workbook = download_workbook(client=client, file_path=file_path)
+
+        if INVENTORY_SHEET not in workbook.sheetnames:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Sheet '{INVENTORY_SHEET}' not found in workbook",
+            )
+
+        sheet: Worksheet = workbook[INVENTORY_SHEET]
+
+        # Get existing ASINs
+        existing_asins = get_existing_asins(sheet=sheet)
+        logger.info("Found %d existing ASINs in inventory", len(existing_asins))
+
+        # Convert Pydantic models to dicts for dropbox_upsert functions
+        orders_dicts = [order.model_dump() for order in request.vine_orders]
+
+        # Build new rows (filters out existing ASINs)
+        new_rows = build_new_rows(orders=orders_dicts, existing_asins=existing_asins)
+        skipped = len(orders_dicts) - len(new_rows)
+
+        logger.info(
+            "%d new orders to insert, %d already present (skipped)", len(new_rows), skipped
+        )
+
+        new_items = []
+        for order in new_rows:
+            new_items.append({
+                "asin": order.get("asin", ""),
+                "name": order.get("name", "Unknown"),
+                "order_date": order.get("order_date", ""),
+            })
+
+        if len(new_rows) == 0:
+            logger.info("No new orders to add")
+            return SyncVineOrdersResponse(
+                success=True,
+                added=0,
+                skipped=skipped,
+                dry_run=dry_run,
+                new_items=[],
+            )
+
+        # Append orders (unless dry run)
+        if not dry_run:
+            added = append_orders_to_sheet(sheet=sheet, orders=new_rows)
+            upload_workbook(client=client, workbook=workbook, file_path=file_path)
+            logger.info("Sync complete: %d orders added to inventory", added)
+        else:
+            added = len(new_rows)
+            logger.info("DRY RUN: Would add %d orders to inventory", added)
+
+        return SyncVineOrdersResponse(
+            success=True,
+            added=added,
+            skipped=skipped,
+            dry_run=dry_run,
+            new_items=new_items,
+        )
+
+    except Exception as e:
+        logger.exception("Vine order sync failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/sync-delivery-dates", response_model=SyncResponse)
