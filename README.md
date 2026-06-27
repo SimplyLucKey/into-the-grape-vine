@@ -211,6 +211,42 @@ The extension will:
 
 ---
 
+## Fetching prices automatically
+
+**One-Click Workflow:**
+
+Click **💰 Fetch Prices** in the extension popup.
+
+The backend will:
+- Read your Excel file
+- Find all items missing prices (within your configured time window)
+- Fetch each product page from Amazon automatically
+- Parse the current price
+- Update the price column (or mark as -1 if failed)
+- Upload back to Dropbox
+
+**Smart Guardrails:**
+
+Customize two settings in the popup to prevent wasting time on old/unavailable products:
+
+- **Days back**: Only fetch prices for orders from the last X days (enter any number)
+  - Default: 14 days
+  - Old products often have no listing anymore
+- **Max items**: Limit how many items to fetch per run (10/25/50/100)
+  - Default: 50 items
+  - Prevents long-running fetches
+
+**Failed items are marked as -1** to skip them on future runs, so your list doesn't grow forever.
+
+**Safety:**
+- Click **🔍 Preview** first to see how many items need prices
+- Adds ~1.5 second delay between requests (respectful to Amazon)
+- Logs detailed progress in backend terminal
+
+**Note:** Amazon may occasionally block requests if too many are made. The backend handles this gracefully and will log which items failed.
+
+---
+
 ## .gitignore reminder
 
 Make sure `backend/.env` is in your `.gitignore` — never commit credentials.
