@@ -1,25 +1,40 @@
 /**
  * popup.js
- * Handles the extension popup: detects current page, triggers extraction,
- * and renders the captured orders queue.
+ * UI logic for the extension popup window (opened when clicking the 🍇 icon).
+ *
+ * Responsibilities:
+ * - Detect current page and enable/disable appropriate buttons
+ * - Trigger manual extraction of Vine orders or account orders
+ * - Display captured orders in lists
+ * - Handle Dropbox settings configuration
+ * - Trigger one-click sync to Dropbox
  */
 
+// Status and hints
 const statusEl          = document.getElementById('status');
-const countEl           = document.getElementById('queue-count');
-const listEl            = document.getElementById('order-list');
-const accountCountEl    = document.getElementById('account-count');
-const accountListEl     = document.getElementById('account-list');
 const hintEl            = document.getElementById('page-hint');
 const syncProgressEl    = document.getElementById('sync-progress');
-const settingsToggle    = document.getElementById('settings-toggle');
-const settingsPanel     = document.getElementById('settings-panel');
-const dropboxTokenInput = document.getElementById('dropbox-token');
-const dropboxPathInput  = document.getElementById('dropbox-path');
-const btnExtract        = document.getElementById('btn-extract');
-const btnClear          = document.getElementById('btn-clear');
+
+// Vine orders section
+const vineCountEl       = document.getElementById('queue-count');
+const vineListEl        = document.getElementById('order-list');
+const btnExtractVine    = document.getElementById('btn-extract');
+const btnClearVine      = document.getElementById('btn-clear');
+
+// Account orders section
+const accountCountEl    = document.getElementById('account-count');
+const accountListEl     = document.getElementById('account-list');
 const btnExtractOrders  = document.getElementById('btn-extract-orders');
 const btnClearOrders    = document.getElementById('btn-clear-orders');
+
+// Dropbox settings
+const settingsToggle    = document.getElementById('settings-toggle');
+const settingsPanel     = document.getElementById('settings-panel');
+const dropboxTokenInput = document.getElementById('dropbox-token'); // References <input id="dropbox-token">
+const dropboxPathInput  = document.getElementById('dropbox-path');  // References <input id="dropbox-path">
 const btnSaveSettings   = document.getElementById('btn-save-settings');
+
+// Sync button
 const btnSync           = document.getElementById('btn-sync');
 
 (async function init() {
@@ -36,16 +51,16 @@ const btnSync           = document.getElementById('btn-sync');
   } else if (isOrders) {
     setStatus('On account orders — ready to extract.');
     hintEl.textContent = 'Shows 10 orders per page. Paginate and extract each page to capture delivery dates.';
-    btnExtract.disabled = true;
+    btnExtractVine.disabled = true;
   } else {
     setStatus('Go to /vine/orders or /order-history to extract.', 'error');
-    btnExtract.disabled = true;
+    btnExtractVine.disabled = true;
     btnExtractOrders.disabled = true;
   }
 
-  await loadQueue();
+  await loadVineOrders();
   await loadAccountOrders();
-  await loadSettings();
+  await loadDropboxSettings();
 })();
 
 // Settings toggle
@@ -53,8 +68,8 @@ settingsToggle.addEventListener('click', () => {
   settingsPanel.classList.toggle('visible');
 });
 
-// Load settings
-async function loadSettings() {
+// Load Dropbox settings from storage
+async function loadDropboxSettings() {
   const settings = await getDropboxSettings();
   if (settings.token) dropboxTokenInput.value = settings.token;
   if (settings.filePath) dropboxPathInput.value = settings.filePath;
@@ -75,29 +90,29 @@ btnSaveSettings.addEventListener('click', async () => {
   settingsPanel.classList.remove('visible');
 });
 
-btnExtract.addEventListener('click', async () => {
-  btnExtract.disabled = true;
-  btnExtract.textContent = 'Extracting…';
+btnExtractVine.addEventListener('click', async () => {
+  btnExtractVine.disabled = true;
+  btnExtractVine.textContent = 'Extracting…';
   setStatus('');
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   try {
-    const res = await chrome.tabs.sendMessage(tab.id, { action: 'MANUAL_EXTRACT' });
-    if (res?.ok) setStatus(`Captured ${res.count} orders.`, 'success');
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'MANUAL_EXTRACT_VINE' });
+    if (res?.ok) setStatus(`Captured ${res.count} Vine orders.`, 'success');
     else setStatus(res?.reason ?? 'Nothing to extract.', 'error');
   } catch {
     setStatus('Could not reach the page — try refreshing vine/orders.', 'error');
   }
 
-  await loadQueue();
-  btnExtract.disabled = false;
-  btnExtract.textContent = 'Extract this page';
+  await loadVineOrders();
+  btnExtractVine.disabled = false;
+  btnExtractVine.textContent = 'Extract Vine Orders';
 });
 
-btnClear.addEventListener('click', async () => {
-  await chrome.runtime.sendMessage({ action: 'CLEAR_QUEUE' });
-  await loadQueue();
-  setStatus('Vine queue cleared.');
+btnClearVine.addEventListener('click', async () => {
+  await chrome.runtime.sendMessage({ action: 'CLEAR_VINE_ORDERS' });
+  await loadVineOrders();
+  setStatus('Vine orders cleared.');
 });
 
 btnExtractOrders.addEventListener('click', async () => {
@@ -168,22 +183,22 @@ btnSync.addEventListener('click', async () => {
   btnSync.textContent = '🔄 Sync Delivery Dates to Dropbox';
 });
 
-async function loadQueue() {
-  const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_QUEUE' });
-  countEl.textContent = orders.length;
+async function loadVineOrders() {
+  const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });
+  vineCountEl.textContent = orders.length;
 
   if (!orders.length) {
-    listEl.innerHTML = '<div class="empty">Nothing captured yet.</div>';
+    vineListEl.innerHTML = '<div class="empty">Nothing captured yet.</div>';
     return;
   }
 
-  listEl.innerHTML = orders.map((o) => `
+  vineListEl.innerHTML = orders.map((vineOrder) => `
     <div class="order-row">
-      <img class="order-thumb" src="${escapeHtml(o.thumbnail ?? '')}" alt="">
+      <img class="order-thumb" src="${escapeHtml(vineOrder.thumbnail ?? '')}" alt="">
       <div class="order-info">
-        <div class="order-name" title="${escapeHtml(o.name ?? '')}">${escapeHtml(o.name ?? o.asin ?? 'Unknown')}</div>
+        <div class="order-name" title="${escapeHtml(vineOrder.name ?? '')}">${escapeHtml(vineOrder.name ?? vineOrder.asin ?? 'Unknown')}</div>
         <div class="order-meta">
-          ${o.fmv != null ? '$' + o.fmv.toFixed(2) : '—'} · ${o.order_date ?? '—'} · ${o.order_id ?? '—'}
+          ${vineOrder.fmv != null ? '$' + vineOrder.fmv.toFixed(2) : '—'} · ${vineOrder.order_date ?? '—'} · ${vineOrder.order_id ?? '—'}
         </div>
       </div>
     </div>`).join('');
@@ -198,12 +213,12 @@ async function loadAccountOrders() {
     return;
   }
 
-  accountListEl.innerHTML = orders.map((o) => `
+  accountListEl.innerHTML = orders.map((accountOrder) => `
     <div class="order-row">
       <div class="order-info">
-        <div class="order-name" title="${escapeHtml(o.name ?? '')}">${escapeHtml(o.name ?? o.asin ?? 'Unknown')}</div>
+        <div class="order-name" title="${escapeHtml(accountOrder.name ?? '')}">${escapeHtml(accountOrder.name ?? accountOrder.asin ?? 'Unknown')}</div>
         <div class="order-meta">
-          ${o.asin ?? '—'} · ${o.delivery_status ?? '—'} ${o.delivery_date ? '(' + o.delivery_date + ')' : ''}
+          ${accountOrder.asin ?? '—'} · ${accountOrder.delivery_status ?? '—'} ${accountOrder.delivery_date ? '(' + accountOrder.delivery_date + ')' : ''}
         </div>
       </div>
     </div>`).join('');
