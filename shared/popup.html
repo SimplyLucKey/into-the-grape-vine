@@ -67,12 +67,36 @@
     <div class="empty">Nothing captured yet.</div>
   </div>
 
-  <!-- Sync Section -->
-  <div class="btn-row" style="margin-top: 12px;">
-    <button id="btn-sync-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview Changes</button>
-    <button id="btn-sync" class="btn btn-primary" style="width: 48%;">🔄 Sync to Dropbox</button>
+  <!-- Sync Delivery Dates Section -->
+  <div class="queue-header" style="margin-top: 16px;">Sync Delivery Dates</div>
+  <div class="btn-row">
+    <button id="btn-sync-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
+    <button id="btn-sync" class="btn btn-primary" style="width: 48%;">🔄 Sync Dates</button>
   </div>
   <div class="progress" id="sync-progress"></div>
+
+  <!-- Fetch Prices Section -->
+  <div class="queue-header" style="margin-top: 16px;">Fetch Prices</div>
+  <div style="margin-bottom: 8px; font-size: 11px; color: #666;">
+    <label style="display: inline-block; margin-right: 12px;">
+      Days back:
+      <input id="days-back" type="number" value="14" min="1" style="font-size: 11px; padding: 2px; width: 50px;">
+    </label>
+    <label style="display: inline-block;">
+      Max items:
+      <select id="max-items" style="font-size: 11px; padding: 2px;">
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
+  </div>
+  <div class="btn-row">
+    <button id="btn-prices-dryrun" class="btn btn-secondary" style="width: 48%; margin-right: 4%;">🔍 Preview</button>
+    <button id="btn-prices" class="btn btn-primary" style="width: 48%;">💰 Fetch Prices</button>
+  </div>
+  <div class="progress" id="prices-progress"></div>
 
   <div class="page-hint" id="page-hint"></div>
 
