@@ -39,28 +39,12 @@
     .order-meta { color: #888; font-size: 11px; margin-top: 2px; }
     .empty { color: #aaa; font-style: italic; padding: 16px; text-align: center; font-size: 12px; }
     .page-hint { font-size: 11px; color: #999; margin-top: 10px; line-height: 1.5; }
-    .settings-toggle { font-size: 11px; color: #6b2d8b; cursor: pointer; text-decoration: underline; margin-bottom: 8px; }
-    .settings-panel { display: none; background: #f9f9f9; padding: 12px; border-radius: 4px; margin-bottom: 12px; }
-    .settings-panel.visible { display: block; }
-    .settings-input { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; margin-top: 4px; margin-bottom: 8px; }
-    .settings-label { font-size: 11px; font-weight: 600; color: #333; display: block; margin-top: 8px; }
     .progress { font-size: 11px; color: #666; font-style: italic; margin-top: 4px; }
   </style>
 </head>
 <body>
   <h1>🍇 Into the Grape Vine</h1>
   <div class="subtitle">Amazon Vine order tracker</div>
-
-  <!-- Settings Toggle -->
-  <div class="settings-toggle" id="settings-toggle">⚙️ Configure Dropbox</div>
-  <div class="settings-panel" id="settings-panel">
-    <label class="settings-label">Dropbox Access Token</label>
-    <input type="password" class="settings-input" id="dropbox-token" placeholder="Enter your Dropbox access token">
-    <label class="settings-label">Excel File Path</label>
-    <input type="text" class="settings-input" id="dropbox-path" placeholder="/path/to/your/spreadsheet.xlsx">
-    <button id="btn-save-settings" class="btn btn-primary" style="width: 100%;">Save Settings</button>
-  </div>
-
   <div id="status" class="status"></div>
 
   <!-- Vine Orders Section -->
@@ -91,10 +75,6 @@
 
   <div class="page-hint" id="page-hint"></div>
 
-  <!-- Load SheetJS library -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-  <script src="utils.js"></script>
-  <script src="dropbox-sync.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
