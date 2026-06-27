@@ -211,7 +211,7 @@ The extension will:
 
 ---
 
-## Fetching prices automatically
+## Fetching product prices automatically
 
 **One-Click Workflow:**
 
@@ -219,9 +219,9 @@ Click **💰 Fetch Prices** in the extension popup.
 
 The backend will:
 - Read your Excel file
-- Find all items missing prices (within your configured time window)
+- Find all items missing product prices (within your configured time window)
 - Fetch each product page from Amazon automatically
-- Parse the current price
+- Parse the current product price
 - Update the price column (or mark as -1 if failed)
 - Upload back to Dropbox
 
@@ -239,7 +239,8 @@ Customize two settings in the popup to prevent wasting time on old/unavailable p
 **Failed items are marked as -1** to skip them on future runs, so your list doesn't grow forever.
 
 **Safety:**
-- Click **🔍 Preview** first to see how many items need prices
+
+- Click **🔍 Preview** first to see how many items need product prices
 - Adds ~1.5 second delay between requests (respectful to Amazon)
 - Logs detailed progress in backend terminal
 

@@ -250,8 +250,8 @@ async def sync_delivery_dates(request: SyncRequest, dry_run: bool = False) -> Sy
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class FetchPricesResponse(BaseModel):
-    """Response from fetch-prices endpoint."""
+class FetchProductPricesResponse(BaseModel):
+    """Response from fetch-product-prices endpoint."""
 
     success: bool
     fetched: int
@@ -260,13 +260,13 @@ class FetchPricesResponse(BaseModel):
     dry_run: bool = False
 
 
-@app.post("/fetch-prices", response_model=FetchPricesResponse)
-async def fetch_prices(
+@app.post("/fetch-product-prices", response_model=FetchProductPricesResponse)
+async def fetch_product_prices(
     dry_run: bool = False,
     days_back: int = 14,
     max_items: int = 50,
-) -> FetchPricesResponse:
-    """Fetch prices from Amazon product pages for items missing prices.
+) -> FetchProductPricesResponse:
+    """Fetch product prices from Amazon product pages for items missing prices.
 
     This endpoint:
     1. Downloads the Excel file from Dropbox
@@ -285,7 +285,7 @@ async def fetch_prices(
         from datetime import datetime, timedelta
 
         logger.info(
-            "Starting price fetch (dry_run=%s, days_back=%d, max_items=%d)",
+            "Starting product price fetch (dry_run=%s, days_back=%d, max_items=%d)",
             dry_run,
             days_back,
             max_items,
@@ -314,11 +314,11 @@ async def fetch_prices(
         # Calculate cutoff date
         cutoff_date = datetime.now() - timedelta(days=days_back)
         logger.info(
-            "Only fetching prices for orders after %s",
+            "Only fetching product prices for orders after %s",
             cutoff_date.strftime("%Y-%m-%d"),
         )
 
-        # Find rows with missing prices (within date threshold)
+        # Find rows with missing product prices (within date threshold)
         asins_to_fetch: list[tuple[int, str]] = []  # (row_idx, asin)
 
         for row_idx in range(2, sheet.max_row + 1):
@@ -360,8 +360,8 @@ async def fetch_prices(
                     break
 
         if not asins_to_fetch:
-            logger.info("No items need price fetching")
-            return FetchPricesResponse(
+            logger.info("No items need product price fetching")
+            return FetchProductPricesResponse(
                 success=True,
                 fetched=0,
                 failed=0,
@@ -369,11 +369,11 @@ async def fetch_prices(
                 dry_run=dry_run,
             )
 
-        logger.info("Found %d items needing prices", len(asins_to_fetch))
+        logger.info("Found %d items needing product prices", len(asins_to_fetch))
 
         if dry_run:
-            logger.info("DRY RUN: Would fetch prices for %d items", len(asins_to_fetch))
-            return FetchPricesResponse(
+            logger.info("DRY RUN: Would fetch product prices for %d items", len(asins_to_fetch))
+            return FetchProductPricesResponse(
                 success=True,
                 fetched=0,
                 failed=0,
@@ -381,7 +381,7 @@ async def fetch_prices(
                 dry_run=True,
             )
 
-        # Fetch prices from Amazon
+        # Fetch product prices from Amazon
         asins_only = [asin for _, asin in asins_to_fetch]
         prices = fetch_multiple_prices(asins_only)
 
@@ -394,20 +394,22 @@ async def fetch_prices(
             if price is not None:
                 sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
                 fetched += 1
-                logger.info("Row %d (%s): Set price $%.2f", row_idx, asin, price)
+                logger.info("Row %d (%s): Set product price $%.2f", row_idx, asin, price)
             else:
                 # Mark as -1 to indicate we tried and failed
                 # This prevents retrying the same item every time
                 sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
                 failed += 1
-                logger.warning("Row %d (%s): Failed to fetch price, marked as -1", row_idx, asin)
+                logger.warning(
+                    "Row %d (%s): Failed to fetch product price, marked as -1", row_idx, asin
+                )
 
         # Upload updated workbook (even if some failed, to save -1 markers)
         if fetched > 0 or failed > 0:
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
-            logger.info("Price fetch complete: %d fetched, %d failed", fetched, failed)
+            logger.info("Product price fetch complete: %d fetched, %d failed", fetched, failed)
 
-        return FetchPricesResponse(
+        return FetchProductPricesResponse(
             success=True,
             fetched=fetched,
             failed=failed,
@@ -416,7 +418,7 @@ async def fetch_prices(
         )
 
     except Exception as e:
-        logger.exception("Price fetch failed")
+        logger.exception("Product price fetch failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

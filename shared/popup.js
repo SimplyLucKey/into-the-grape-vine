@@ -31,12 +31,12 @@ const btnClearOrders    = document.getElementById('btn-clear-orders');
 const btnSync           = document.getElementById('btn-sync');
 const btnSyncDryRun     = document.getElementById('btn-sync-dryrun');
 
-// Price fetch buttons and settings
-const btnPrices         = document.getElementById('btn-prices');
-const btnPricesDryRun   = document.getElementById('btn-prices-dryrun');
-const pricesProgressEl  = document.getElementById('prices-progress');
-const daysBackInput     = document.getElementById('days-back');
-const maxItemsInput     = document.getElementById('max-items');
+// Product price fetch buttons and settings
+const btnProductPrices         = document.getElementById('btn-product-prices');
+const btnProductPricesDryRun   = document.getElementById('btn-product-prices-dryrun');
+const productPricesProgressEl  = document.getElementById('product-prices-progress');
+const daysBackInput            = document.getElementById('days-back');
+const maxItemsInput            = document.getElementById('max-items');
 
 (async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -185,16 +185,16 @@ btnSyncDryRun.addEventListener('click', () => performSync(true));
 // Real sync
 btnSync.addEventListener('click', () => performSync(false));
 
-// Helper function for price fetching
-async function fetchPrices(dryRun = false) {
-  const activeBtn = dryRun ? btnPricesDryRun : btnPrices;
-  const otherBtn = dryRun ? btnPrices : btnPricesDryRun;
+// Helper function for product price fetching
+async function fetchProductPrices(dryRun = false) {
+  const activeBtn = dryRun ? btnProductPricesDryRun : btnProductPrices;
+  const otherBtn = dryRun ? btnProductPrices : btnProductPricesDryRun;
 
   activeBtn.disabled = true;
   otherBtn.disabled = true;
   activeBtn.textContent = dryRun ? '⏳ Checking...' : '⏳ Fetching...';
   setStatus('');
-  pricesProgressEl.textContent = 'Connecting to backend...';
+  productPricesProgressEl.textContent = 'Connecting to backend...';
 
   try {
     // Get user settings
@@ -207,7 +207,7 @@ async function fetchPrices(dryRun = false) {
       max_items: maxItems.toString(),
     });
 
-    const url = `http://localhost:8000/fetch-prices?${params}`;
+    const url = `http://localhost:8000/fetch-product-prices?${params}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -215,31 +215,31 @@ async function fetchPrices(dryRun = false) {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Price fetch failed');
+      throw new Error(error.detail || 'Product price fetch failed');
     }
 
     const result = await response.json();
 
     if (result.fetched === 0 && result.failed === 0 && result.skipped === 0) {
-      setStatus('All items already have prices!', 'success');
+      setStatus('All items already have product prices!', 'success');
     } else if (dryRun) {
-      setStatus(`Preview: Would fetch prices for ${result.skipped} items`, 'success');
+      setStatus(`Preview: Would fetch product prices for ${result.skipped} items`, 'success');
     } else {
-      let message = `Fetched ${result.fetched} prices`;
+      let message = `Fetched ${result.fetched} product prices`;
       if (result.failed > 0) {
         message += `, ${result.failed} failed`;
       }
       setStatus(message, 'success');
     }
-    pricesProgressEl.textContent = '';
+    productPricesProgressEl.textContent = '';
   } catch (err) {
     if (err.message.includes('fetch')) {
       setStatus('Backend not running. Start server: ./start-server.sh', 'error');
     } else {
-      setStatus(`Price fetch failed: ${err.message}`, 'error');
+      setStatus(`Product price fetch failed: ${err.message}`, 'error');
     }
-    pricesProgressEl.textContent = '';
-    console.error('[Into the Grape Vine] Price fetch error:', err);
+    productPricesProgressEl.textContent = '';
+    console.error('[Into the Grape Vine] Product price fetch error:', err);
   }
 
   activeBtn.disabled = false;
@@ -247,9 +247,9 @@ async function fetchPrices(dryRun = false) {
   activeBtn.textContent = dryRun ? '🔍 Preview' : '💰 Fetch Prices';
 }
 
-// Price fetch buttons
-btnPricesDryRun.addEventListener('click', () => fetchPrices(true));
-btnPrices.addEventListener('click', () => fetchPrices(false));
+// Product price fetch buttons
+btnProductPricesDryRun.addEventListener('click', () => fetchProductPrices(true));
+btnProductPrices.addEventListener('click', () => fetchProductPrices(false));
 
 async function loadVineOrders() {
   const { orders = [] } = await chrome.runtime.sendMessage({ action: 'GET_VINE_ORDERS' });
