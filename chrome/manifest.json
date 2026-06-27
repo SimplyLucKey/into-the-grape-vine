@@ -4,11 +4,15 @@
   "version": "0.1.0",
   "description": "Captures Amazon Vine order data and syncs to your Dropbox Excel sheet.",
   "permissions": ["storage", "alarms", "activeTab", "scripting"],
-  "host_permissions": ["https://www.amazon.com/*"],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://content.dropboxapi.com/*",
+    "https://api.dropboxapi.com/*"
+  ],
   "content_scripts": [
     {
       "matches": ["https://www.amazon.com/vine/orders*"],
-      "js": ["utils.js", "content.js"],
+      "js": ["utils.js", "vine-orders.js"],
       "run_at": "document_idle"
     },
     {
@@ -18,7 +22,7 @@
         "https://www.amazon.com/gp/css/order-history*",
         "https://www.amazon.com/gp/*/order-history*"
       ],
-      "js": ["utils.js", "content-orders.js"],
+      "js": ["utils.js", "account-orders.js"],
       "run_at": "document_idle"
     }
   ],
