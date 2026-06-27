@@ -14,11 +14,9 @@
  *
  * If a selector breaks, open DevTools → Elements → Ctrl+F and search
  * for the class name to find the updated one.
+ *
+ * Note: Depends on utils.js being loaded first (via manifest.json order)
  */
-
-function isVineOrdersPage() {
-  return window.location.href.includes('/vine/orders');
-}
 
 function extractVineOrders() {
   const rows = document.querySelectorAll('tr.vvp-orders-table--row');
@@ -37,7 +35,7 @@ function extractVineOrders() {
       // Product link contains the ASIN in /dp/XXXXXXXXXX/
       const titleAnchor = row.querySelector('a.a-link-normal[href*="/dp/"]');
       const url = titleAnchor?.href ?? null;
-      const asin = url?.match(/\/dp\/([A-Z0-9]{10})/)?.[1] ?? null;
+      const asin = url ? extractASIN(url) : null; // from utils.js
 
       // .a-truncate-full is the hidden span with the complete untruncated title
       const name = titleAnchor?.querySelector('.a-truncate-full')?.textContent?.trim() ?? null;
