@@ -6,6 +6,8 @@ dependencies = [
     "dropbox>=11.36.0",
     "python-dotenv>=1.0.0",
     "openpyxl>=3.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
 ]
 
 [tool.ruff]
