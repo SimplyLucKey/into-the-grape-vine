@@ -94,7 +94,7 @@ def get_existing_asins(sheet: Worksheet) -> set[str]:
 
 
 def parse_order_date(order: dict[str, Any]) -> datetime | None:
-    """Parse an order's date into a datetime.
+    """Parse an order's date into a datetime (date only, no time).
 
     Prefers order_timestamp (epoch ms) over order_date string.
 
@@ -102,10 +102,11 @@ def parse_order_date(order: dict[str, Any]) -> datetime | None:
         order: Order dict from the extension queue.
 
     Returns:
-        datetime object, or None if unparseable.
+        datetime.date object (date only), or None if unparseable.
     """
     if order.get("order_timestamp"):
-        return datetime.fromtimestamp(order["order_timestamp"] / 1000)
+        dt = datetime.fromtimestamp(order["order_timestamp"] / 1000)
+        return datetime(dt.year, dt.month, dt.day)  # Strip time component
 
     date_str: str | None = order.get("order_date")
     if not date_str:
@@ -113,7 +114,8 @@ def parse_order_date(order: dict[str, Any]) -> datetime | None:
 
     for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
         try:
-            return datetime.strptime(date_str, fmt)
+            dt = datetime.strptime(date_str, fmt)
+            return datetime(dt.year, dt.month, dt.day)  # Strip time component
         except ValueError:
             continue
 
@@ -158,10 +160,23 @@ def append_orders_to_sheet(
     Returns:
         Number of rows appended.
     """
-    next_row: int = sheet.max_row + 1
+    # Find the actual last row with data (not just max_row which can include empty rows)
+    last_data_row = 1  # Start at header row
+    for row_idx in range(2, sheet.max_row + 1):
+        # Check if this row has any data in key columns
+        if (
+            sheet.cell(row=row_idx, column=_COL_ORDER_DATE).value
+            or sheet.cell(row=row_idx, column=_COL_URL).value
+            or sheet.cell(row=row_idx, column=_COL_NAME).value
+        ):
+            last_data_row = row_idx
+
+    next_row: int = last_data_row + 1
 
     for order in orders:
-        sheet.cell(row=next_row, column=_COL_ORDER_DATE, value=parse_order_date(order=order))
+        sheet.cell(
+            row=next_row, column=_COL_ORDER_DATE, value=parse_order_date(order=order)
+        )
         sheet.cell(row=next_row, column=_COL_URL, value=order.get("url"))
         sheet.cell(row=next_row, column=_COL_NAME, value=order.get("name"))
         sheet.cell(row=next_row, column=_COL_FMV, value=order.get("fmv"))
@@ -198,7 +213,9 @@ def upsert_orders(orders: list[dict[str, Any]]) -> None:
 
     new_rows = build_new_rows(orders=orders, existing_asins=existing_asins)
     skipped = len(orders) - len(new_rows)
-    logger.info("%d new orders to insert, %d already present (skipped)", len(new_rows), skipped)
+    logger.info(
+        "%d new orders to insert, %d already present (skipped)", len(new_rows), skipped
+    )
 
     if not new_rows:
         logger.info("Nothing to do.")
