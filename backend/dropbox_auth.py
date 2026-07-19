@@ -11,8 +11,7 @@ load_dotenv()
 def get_dropbox_client() -> dropbox.Dropbox:
     """Return an authenticated Dropbox client using refresh-token OAuth.
 
-    The SDK handles access-token refresh automatically — no manual token
-    rotation needed after initial setup.
+    Disables SDK's built-in retry so our custom retry logic handles it.
 
     Raises:
         EnvironmentError: If any required environment variable is missing.
@@ -41,4 +40,6 @@ def get_dropbox_client() -> dropbox.Dropbox:
         oauth2_refresh_token=refresh_token,
         app_key=app_key,
         app_secret=app_secret,
+        max_retries_on_error=0,
+        max_retries_on_rate_limit=0,
     )
