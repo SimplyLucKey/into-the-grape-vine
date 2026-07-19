@@ -10,7 +10,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime
 
 import dropbox
 from dotenv import load_dotenv
@@ -115,11 +115,10 @@ class SyncResponse(BaseModel):
     changes: list[dict[str, str]] = []
 
 
-def parse_delivery_date(order: AccountOrder) -> Any:
+def parse_delivery_date(order: AccountOrder) -> datetime | None:
     """Parse delivery date from account order."""
     if not order.delivery_date_parsed:
         return None
-    from datetime import datetime
 
     return datetime.fromisoformat(order.delivery_date_parsed.replace("Z", "+00:00"))
 
@@ -173,28 +172,42 @@ def sync_delivery_dates_to_sheet(
             if delivery_date:
                 filled += 1
                 date_str = delivery_date.strftime("%Y-%m-%d")
-                changes.append({
-                    "row": str(row_idx),
-                    "asin": asin,
-                    "action": f"fill delivery date: {date_str}",
-                    "product": name or "Unknown",
-                })
+                changes.append(
+                    {
+                        "row": str(row_idx),
+                        "asin": asin,
+                        "action": f"fill delivery date: {date_str}",
+                        "product": name or "Unknown",
+                    }
+                )
 
                 if not dry_run:
-                    sheet.cell(row=row_idx, column=_COL_DELIVERED_DATE, value=delivery_date)
+                    sheet.cell(
+                        row=row_idx, column=_COL_DELIVERED_DATE, value=delivery_date
+                    )
 
                 action = "Would fill" if dry_run else "Filled"
-                logger.info("Row %d (%s): %s delivery date %s", row_idx, asin, action, date_str)
+                product_name = (name[:40] + "...") if name and len(name) > 40 else name
+                logger.info(
+                    "  → Row %d | %s | %s | %s delivery date: %s",
+                    row_idx,
+                    asin,
+                    product_name or "Unknown",
+                    action,
+                    date_str,
+                )
 
         elif order.delivery_status == "cancelled":
             cancelled += 1
             cancelled_items.append({"asin": asin, "name": name or "Unknown"})
-            changes.append({
-                "row": str(row_idx),
-                "asin": asin,
-                "action": "mark as cancelled (manual deletion recommended)",
-                "product": name or "Unknown",
-            })
+            changes.append(
+                {
+                    "row": str(row_idx),
+                    "asin": asin,
+                    "action": "mark as cancelled (manual deletion recommended)",
+                    "product": name or "Unknown",
+                }
+            )
             log_msg = f"Row {row_idx} ({asin}): Order cancelled"
             logger.warning(log_msg)
 
@@ -202,7 +215,9 @@ def sync_delivery_dates_to_sheet(
 
 
 @app.post("/sync-vine-orders", response_model=SyncVineOrdersResponse)
-async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False) -> SyncVineOrdersResponse:
+async def sync_vine_orders(
+    request: SyncVineOrdersRequest, dry_run: bool = False
+) -> SyncVineOrdersResponse:
     """Sync Vine orders to Dropbox Excel file.
 
     This endpoint:
@@ -232,7 +247,9 @@ async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False
 
         file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
         if not file_path:
-            raise HTTPException(status_code=500, detail="DROPBOX_FILE_PATH not configured")
+            raise HTTPException(
+                status_code=500, detail="DROPBOX_FILE_PATH not configured"
+            )
 
         workbook = download_workbook(client=client, file_path=file_path)
 
@@ -256,16 +273,34 @@ async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False
         skipped = len(orders_dicts) - len(new_rows)
 
         logger.info(
-            "%d new orders to insert, %d already present (skipped)", len(new_rows), skipped
+            "%d new orders to insert, %d already present (skipped)",
+            len(new_rows),
+            skipped,
         )
 
+        # Log each new order to be added
         new_items = []
         for order in new_rows:
-            new_items.append({
-                "asin": order.get("asin", ""),
-                "name": order.get("name", "Unknown"),
-                "order_date": order.get("order_date", ""),
-            })
+            asin = order.get("asin", "")
+            name = order.get("name", "Unknown")
+            order_date = order.get("order_date", "")
+            fmv = order.get("fmv")
+
+            logger.info(
+                "  → Adding: %s | %s | FMV: $%.2f | Date: %s",
+                asin,
+                name[:50] + "..." if len(name) > 50 else name,
+                fmv if fmv else 0,
+                order_date,
+            )
+
+            new_items.append(
+                {
+                    "asin": asin,
+                    "name": name,
+                    "order_date": order_date,
+                }
+            )
 
         if len(new_rows) == 0:
             logger.info("No new orders to add")
@@ -279,12 +314,14 @@ async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False
 
         # Append orders (unless dry run)
         if not dry_run:
+            logger.info("Adding %d orders to spreadsheet...", len(new_rows))
             added = append_orders_to_sheet(sheet=sheet, orders=new_rows)
+            logger.info("Uploading modified spreadsheet to Dropbox...")
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
-            logger.info("Sync complete: %d orders added to inventory", added)
+            logger.info("✓ Vine sync complete: %d orders added to inventory", added)
         else:
             added = len(new_rows)
-            logger.info("DRY RUN: Would add %d orders to inventory", added)
+            logger.info("✓ DRY RUN: Would add %d orders to inventory", added)
 
         return SyncVineOrdersResponse(
             success=True,
@@ -300,7 +337,9 @@ async def sync_vine_orders(request: SyncVineOrdersRequest, dry_run: bool = False
 
 
 @app.post("/sync-delivery-dates", response_model=SyncResponse)
-async def sync_delivery_dates(request: SyncRequest, dry_run: bool = False) -> SyncResponse:
+async def sync_delivery_dates(
+    request: SyncRequest, dry_run: bool = False
+) -> SyncResponse:
     """Sync delivery dates from account orders to Dropbox Excel file.
 
     This endpoint:
@@ -330,7 +369,9 @@ async def sync_delivery_dates(request: SyncRequest, dry_run: bool = False) -> Sy
 
         file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
         if not file_path:
-            raise HTTPException(status_code=500, detail="DROPBOX_FILE_PATH not configured")
+            raise HTTPException(
+                status_code=500, detail="DROPBOX_FILE_PATH not configured"
+            )
 
         workbook = download_workbook(client=client, file_path=file_path)
 
@@ -365,7 +406,9 @@ async def sync_delivery_dates(request: SyncRequest, dry_run: bool = False) -> Sy
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
             logger.info("Sync complete: %d filled, %d cancelled", filled, cancelled)
         else:
-            logger.info("DRY RUN: Would fill %d, would mark %d as cancelled", filled, cancelled)
+            logger.info(
+                "DRY RUN: Would fill %d, would mark %d as cancelled", filled, cancelled
+            )
 
         return SyncResponse(
             success=True,
@@ -430,7 +473,9 @@ async def fetch_product_prices(
         # Download workbook
         file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
         if not file_path:
-            raise HTTPException(status_code=500, detail="DROPBOX_FILE_PATH not configured")
+            raise HTTPException(
+                status_code=500, detail="DROPBOX_FILE_PATH not configured"
+            )
 
         workbook = download_workbook(client=client, file_path=file_path)
 
@@ -467,7 +512,9 @@ async def fetch_product_prices(
                         order_date = order_date_cell.value
                     else:
                         # Try parsing if it's a string
-                        order_date = datetime.strptime(str(order_date_cell.value), "%m/%d/%Y")
+                        order_date = datetime.strptime(
+                            str(order_date_cell.value), "%m/%d/%Y"
+                        )
 
                     # Skip if too old
                     if order_date < cutoff_date:
@@ -487,7 +534,9 @@ async def fetch_product_prices(
 
                 # Stop at max_items limit
                 if len(asins_to_fetch) >= max_items:
-                    logger.info("Reached max_items limit (%d), stopping scan", max_items)
+                    logger.info(
+                        "Reached max_items limit (%d), stopping scan", max_items
+                    )
                     break
 
         if not asins_to_fetch:
@@ -503,7 +552,9 @@ async def fetch_product_prices(
         logger.info("Found %d items needing product prices", len(asins_to_fetch))
 
         if dry_run:
-            logger.info("DRY RUN: Would fetch product prices for %d items", len(asins_to_fetch))
+            logger.info(
+                "DRY RUN: Would fetch product prices for %d items", len(asins_to_fetch)
+            )
             return FetchProductPricesResponse(
                 success=True,
                 fetched=0,
@@ -525,20 +576,26 @@ async def fetch_product_prices(
             if price is not None:
                 sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
                 fetched += 1
-                logger.info("Row %d (%s): Set product price $%.2f", row_idx, asin, price)
+                logger.info(
+                    "Row %d (%s): Set product price $%.2f", row_idx, asin, price
+                )
             else:
                 # Mark as -1 to indicate we tried and failed
                 # This prevents retrying the same item every time
                 sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
                 failed += 1
                 logger.warning(
-                    "Row %d (%s): Failed to fetch product price, marked as -1", row_idx, asin
+                    "Row %d (%s): Failed to fetch product price, marked as -1",
+                    row_idx,
+                    asin,
                 )
 
         # Upload updated workbook (even if some failed, to save -1 markers)
         if fetched > 0 or failed > 0:
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
-            logger.info("Product price fetch complete: %d fetched, %d failed", fetched, failed)
+            logger.info(
+                "Product price fetch complete: %d fetched, %d failed", fetched, failed
+            )
 
         return FetchProductPricesResponse(
             success=True,
