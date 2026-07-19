@@ -91,7 +91,13 @@ def upload_workbook(
             raise
         except dropbox.exceptions.RateLimitError as e:
             # Extract all available error information
-            retry_after = getattr(e, "retry_after", None) or (2 ** (attempt + 1))
+            # Respect Dropbox's retry_after, or use more conservative exponential backoff
+            dropbox_retry_after = getattr(e, "retry_after", None)
+            if dropbox_retry_after:
+                retry_after = dropbox_retry_after
+            else:
+                # More conservative: 5, 10, 20, 40, 80 seconds
+                retry_after = 5 * (2**attempt)
             status_code = getattr(e, "status_code", "unknown")
             reason = getattr(e, "reason", "unknown")
             error_obj = getattr(e, "error", None)
