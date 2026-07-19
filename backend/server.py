@@ -115,12 +115,13 @@ class SyncResponse(BaseModel):
     changes: list[dict[str, str]] = []
 
 
-def parse_delivery_date(order: AccountOrder) -> datetime | None:
-    """Parse delivery date from account order."""
+def parse_delivery_date(order: AccountOrder) -> str | None:
+    """Parse delivery date from account order, returning YYYY-MM-DD string."""
     if not order.delivery_date_parsed:
         return None
 
-    return datetime.fromisoformat(order.delivery_date_parsed.replace("Z", "+00:00"))
+    dt = datetime.fromisoformat(order.delivery_date_parsed.replace("Z", "+00:00"))
+    return dt.strftime("%Y-%m-%d")
 
 
 def sync_delivery_dates_to_sheet(
