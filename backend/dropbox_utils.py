@@ -140,8 +140,12 @@ def upload_workbook(
             logger.error("   Error: %s", error_msg)
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
-                logger.warning("   Retrying in %ds...", wait_time)
-                time.sleep(wait_time)
+                logger.warning("   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time)
+                try:
+                    time.sleep(wait_time)
+                except KeyboardInterrupt:
+                    logger.warning("⚠ Retry aborted by user")
+                    raise
             else:
                 raise
         except ConnectionError as e:
@@ -154,8 +158,12 @@ def upload_workbook(
             logger.error("   Details: %s", str(e))
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
-                logger.warning("   Retrying in %ds...", wait_time)
-                time.sleep(wait_time)
+                logger.warning("   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time)
+                try:
+                    time.sleep(wait_time)
+                except KeyboardInterrupt:
+                    logger.warning("⚠ Retry aborted by user")
+                    raise
             else:
                 logger.error("✗ Upload failed after %d attempts", max_retries)
                 raise
@@ -169,8 +177,12 @@ def upload_workbook(
             logger.error("   Details: %s", str(e))
             if attempt < max_retries - 1:
                 wait_time = 2 ** (attempt + 1)
-                logger.warning("   Retrying in %ds...", wait_time)
-                time.sleep(wait_time)
+                logger.warning("   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time)
+                try:
+                    time.sleep(wait_time)
+                except KeyboardInterrupt:
+                    logger.warning("⚠ Retry aborted by user")
+                    raise
             else:
                 raise
 
