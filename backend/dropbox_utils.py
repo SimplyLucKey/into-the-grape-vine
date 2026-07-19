@@ -145,6 +145,7 @@ def get_client() -> dropbox.Dropbox:
     return get_dropbox_client()
 
 
+@retry_dropbox()
 def download_workbook(
     client: dropbox.Dropbox,
     file_path: str,
@@ -157,6 +158,7 @@ def download_workbook(
     return load_workbook(filename=io.BytesIO(response.content))
 
 
+@retry_dropbox()
 def upload_workbook(
     client: dropbox.Dropbox,
     workbook: Workbook,
