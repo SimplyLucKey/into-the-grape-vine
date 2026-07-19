@@ -74,7 +74,11 @@ def upload_workbook(
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            logger.info("Upload attempt %d/%d...", attempt + 1, max_retries)
+            logger.info(
+                "Upload attempt %d/%d... (Press Ctrl+C to abort)",
+                attempt + 1,
+                max_retries,
+            )
             client.files_upload(
                 f=content,
                 path=file_path,
@@ -82,23 +86,41 @@ def upload_workbook(
             )
             logger.info("✓ Successfully uploaded workbook to %s", file_path)
             return
+        except KeyboardInterrupt:
+            logger.warning("⚠ Upload interrupted by user (Ctrl+C)")
+            raise
         except dropbox.exceptions.RateLimitError as e:
+            # Extract all available error information
+            retry_after = getattr(e, "retry_after", None) or (2 ** (attempt + 1))
+            status_code = getattr(e, "status_code", "unknown")
+            reason = getattr(e, "reason", "unknown")
+            error_obj = getattr(e, "error", None)
+
+            logger.error("=" * 80)
+            logger.error("✗ RATE LIMIT ERROR (attempt %d/%d)", attempt + 1, max_retries)
+            logger.error("   Status code: %s", status_code)
+            logger.error("   Reason: %s", reason)
+            logger.error("   Error object: %s", error_obj)
+            logger.error("   Full error: %s", str(e))
+            logger.error("   Error type: %s", type(e).__name__)
+            logger.error("   Retry after: %s seconds", retry_after)
+
             if attempt < max_retries - 1:
-                # Get retry-after from the error if available
-                retry_after = getattr(e, "retry_after", None) or (2 ** (attempt + 1))
                 logger.warning(
-                    "✗ RATE LIMITED (attempt %d/%d) - Dropbox says retry after %ds",
-                    attempt + 1,
-                    max_retries,
+                    "   → Waiting %ds before retry (Press Ctrl+C to abort)...",
                     retry_after,
                 )
-                logger.warning("   Error: %s", str(e))
-                time.sleep(retry_after)
+                try:
+                    time.sleep(retry_after)
+                except KeyboardInterrupt:
+                    logger.warning("⚠ Retry aborted by user")
+                    raise
             else:
+                logger.error("=" * 80)
                 logger.error(
-                    "✗ Upload failed: Rate limited after %d attempts", max_retries
+                    "✗✗✗ UPLOAD FAILED: Rate limited after %d attempts", max_retries
                 )
-                logger.error("   Error details: %s", str(e))
+                logger.error("=" * 80)
                 raise
         except dropbox.exceptions.ApiError as e:
             error_msg = str(e.error) if hasattr(e, "error") else str(e)
