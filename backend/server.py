@@ -172,12 +172,11 @@ def sync_delivery_dates_to_sheet(
             delivery_date = parse_delivery_date(order)
             if delivery_date:
                 filled += 1
-                date_str = delivery_date.strftime("%Y-%m-%d")
                 changes.append(
                     {
                         "row": str(row_idx),
                         "asin": asin,
-                        "action": f"fill delivery date: {date_str}",
+                        "action": f"fill delivery date: {delivery_date}",
                         "product": name or "Unknown",
                     }
                 )
@@ -195,7 +194,7 @@ def sync_delivery_dates_to_sheet(
                     asin,
                     product_name or "Unknown",
                     action,
-                    date_str,
+                    delivery_date,
                 )
 
         elif order.delivery_status == "cancelled":
