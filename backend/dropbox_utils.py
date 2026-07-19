@@ -37,9 +37,15 @@ def download_workbook(
     Raises:
         dropbox.exceptions.ApiError: If the file cannot be found or accessed.
     """
-    _, response = client.files_download(path=file_path)
-    logger.debug("Downloaded %s (%d bytes)", file_path, len(response.content))
-    return load_workbook(filename=io.BytesIO(response.content))
+    logger.info("Downloading workbook from Dropbox: %s", file_path)
+    try:
+        _, response = client.files_download(path=file_path)
+        size_mb = len(response.content) / (1024 * 1024)
+        logger.info("✓ Downloaded %s (%.2f MB)", file_path, size_mb)
+        return load_workbook(filename=io.BytesIO(response.content))
+    except dropbox.exceptions.ApiError as e:
+        logger.error("✗ Failed to download: %s", str(e))
+        raise
 
 
 def upload_workbook(
@@ -60,30 +66,84 @@ def upload_workbook(
     workbook.save(buffer)
     buffer.seek(0)
     content = buffer.read()
+    file_size_mb = len(content) / (1024 * 1024)
+
+    logger.info("Preparing upload: %s (%.2f MB)", file_path, file_size_mb)
 
     # Retry logic for flaky connections and rate limits
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
+            logger.info("Upload attempt %d/%d...", attempt + 1, max_retries)
             client.files_upload(
                 f=content,
                 path=file_path,
                 mode=dropbox.files.WriteMode.overwrite,
             )
-            logger.debug("Uploaded workbook to %s", file_path)
+            logger.info("✓ Successfully uploaded workbook to %s", file_path)
             return
-        except (dropbox.exceptions.InternalServerError, ConnectionError) as e:
+        except dropbox.exceptions.RateLimitError as e:
             if attempt < max_retries - 1:
-                wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
+                # Get retry-after from the error if available
+                retry_after = getattr(e, "retry_after", None) or (2 ** (attempt + 1))
                 logger.warning(
-                    "Upload attempt %d failed: %s. Retrying in %ds...",
+                    "✗ RATE LIMITED (attempt %d/%d) - Dropbox says retry after %ds",
                     attempt + 1,
-                    str(e),
-                    wait_time,
+                    max_retries,
+                    retry_after,
                 )
+                logger.warning("   Error: %s", str(e))
+                time.sleep(retry_after)
+            else:
+                logger.error(
+                    "✗ Upload failed: Rate limited after %d attempts", max_retries
+                )
+                logger.error("   Error details: %s", str(e))
+                raise
+        except dropbox.exceptions.ApiError as e:
+            error_msg = str(e.error) if hasattr(e, "error") else str(e)
+            status_code = getattr(e, "status_code", "unknown")
+            logger.error(
+                "✗ Dropbox API error (attempt %d/%d) - Status: %s",
+                attempt + 1,
+                max_retries,
+                status_code,
+            )
+            logger.error("   Error: %s", error_msg)
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                logger.warning("   Retrying in %ds...", wait_time)
                 time.sleep(wait_time)
             else:
-                logger.error("Upload failed after %d attempts", max_retries)
+                raise
+        except ConnectionError as e:
+            logger.error(
+                "✗ Connection error (attempt %d/%d): %s",
+                attempt + 1,
+                max_retries,
+                type(e).__name__,
+            )
+            logger.error("   Details: %s", str(e))
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                logger.warning("   Retrying in %ds...", wait_time)
+                time.sleep(wait_time)
+            else:
+                logger.error("✗ Upload failed after %d attempts", max_retries)
+                raise
+        except Exception as e:
+            logger.error(
+                "✗ Unexpected error (attempt %d/%d): %s",
+                attempt + 1,
+                max_retries,
+                type(e).__name__,
+            )
+            logger.error("   Details: %s", str(e))
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)
+                logger.warning("   Retrying in %ds...", wait_time)
+                time.sleep(wait_time)
+            else:
                 raise
 
 
