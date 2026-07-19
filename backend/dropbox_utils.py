@@ -54,16 +54,37 @@ def upload_workbook(
         workbook: The modified openpyxl Workbook to upload.
         file_path: Absolute Dropbox path to overwrite.
     """
+    import time
+
     buffer = io.BytesIO()
     workbook.save(buffer)
     buffer.seek(0)
+    content = buffer.read()
 
-    client.files_upload(
-        f=buffer.read(),
-        path=file_path,
-        mode=dropbox.files.WriteMode.overwrite,
-    )
-    logger.debug("Uploaded workbook to %s", file_path)
+    # Retry logic for flaky connections and rate limits
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            client.files_upload(
+                f=content,
+                path=file_path,
+                mode=dropbox.files.WriteMode.overwrite,
+            )
+            logger.debug("Uploaded workbook to %s", file_path)
+            return
+        except (dropbox.exceptions.InternalServerError, ConnectionError) as e:
+            if attempt < max_retries - 1:
+                wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
+                logger.warning(
+                    "Upload attempt %d failed: %s. Retrying in %ds...",
+                    attempt + 1,
+                    str(e),
+                    wait_time,
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("Upload failed after %d attempts", max_retries)
+                raise
 
 
 def preview_workbook(workbook: Workbook, max_rows: int = 5) -> None:
@@ -75,7 +96,12 @@ def preview_workbook(workbook: Workbook, max_rows: int = 5) -> None:
     """
     for sheet_name in workbook.sheetnames:
         sheet = workbook[sheet_name]
-        logger.info("Sheet '%s' (%d rows × %d cols)", sheet_name, sheet.max_row, sheet.max_column)
+        logger.info(
+            "Sheet '%s' (%d rows × %d cols)",
+            sheet_name,
+            sheet.max_row,
+            sheet.max_column,
+        )
         for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
             if row_index > max_rows:
                 logger.info("  ... (%d more rows)", sheet.max_row - max_rows - 1)
