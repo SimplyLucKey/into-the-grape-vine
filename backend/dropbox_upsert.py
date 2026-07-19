@@ -93,20 +93,11 @@ def get_existing_asins(sheet: Worksheet) -> set[str]:
     return asins
 
 
-def parse_order_date(order: dict[str, Any]) -> datetime | None:
-    """Parse an order's date into a datetime (date only, no time).
-
-    Prefers order_timestamp (epoch ms) over order_date string.
-
-    Args:
-        order: Order dict from the extension queue.
-
-    Returns:
-        datetime.date object (date only), or None if unparseable.
-    """
+def parse_order_date(order: dict[str, Any]) -> str | None:
+    """Parse order date, returning YYYY-MM-DD string. Prefers order_timestamp over order_date."""
     if order.get("order_timestamp"):
         dt = datetime.fromtimestamp(order["order_timestamp"] / 1000)
-        return datetime(dt.year, dt.month, dt.day)  # Strip time component
+        return dt.strftime("%Y-%m-%d")
 
     date_str: str | None = order.get("order_date")
     if not date_str:
@@ -115,7 +106,7 @@ def parse_order_date(order: dict[str, Any]) -> datetime | None:
     for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
         try:
             dt = datetime.strptime(date_str, fmt)
-            return datetime(dt.year, dt.month, dt.day)  # Strip time component
+            return dt.strftime("%Y-%m-%d")
         except ValueError:
             continue
 
