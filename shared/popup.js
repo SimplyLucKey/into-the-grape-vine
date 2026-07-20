@@ -87,10 +87,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   // Load saved price fetch settings
   chrome.storage.local.get(['priceFetchSettings'], (result) => {
+    console.log('[Into the Grape Vine] Loaded settings:', result);
     if (result.priceFetchSettings) {
       const { daysBack, maxItems } = result.priceFetchSettings;
+      console.log('[Into the Grape Vine] Restoring:', { daysBack, maxItems });
       if (daysBack) daysBackInput.value = daysBack;
       if (maxItems) maxItemsInput.value = maxItems;
+    } else {
+      console.log('[Into the Grape Vine] No saved settings found');
     }
   });
 })();
@@ -299,8 +303,11 @@ async function performProductPricesFetch(dryRun = false) {
     const maxItems = parseInt(maxItemsInput.value, 10);
 
     // Save preferences for next time
+    console.log('[Into the Grape Vine] Saving settings:', { daysBack, maxItems });
     chrome.storage.local.set({
       priceFetchSettings: { daysBack, maxItems }
+    }, () => {
+      console.log('[Into the Grape Vine] Settings saved');
     });
 
     const params = new URLSearchParams({
