@@ -23,56 +23,44 @@ T = TypeVar("T")
 
 
 def retry_dropbox(
-    retries_per_set: int = 10,
-    num_sets: int = 3,
+    max_retries: int = 10,
     max_backoff: int = 300,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """Retry decorator with looping exponential backoff (num_sets x retries_per_set attempts)."""
+    """Retry decorator with exponential backoff capped at max_backoff seconds."""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:  # type: ignore[no-untyped-def]
-            total_attempts = retries_per_set * num_sets
-
-            for attempt in range(total_attempts):
-                # Calculate which set we're in and position within that set
-                set_num = (attempt // retries_per_set) + 1
-                attempt_in_set = attempt % retries_per_set
-
+            for attempt in range(max_retries):
                 try:
                     logger.info(
-                        "%s attempt %d/%d (set %d/%d, attempt %d/%d)... (Press Ctrl+C to abort)",
+                        "%s attempt %d/%d... (Press Ctrl+C to abort)",
                         func.__name__,
                         attempt + 1,
-                        total_attempts,
-                        set_num,
-                        num_sets,
-                        attempt_in_set + 1,
-                        retries_per_set,
+                        max_retries,
                     )
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    return result
                 except KeyboardInterrupt:
-                    logger.warning("⚠ %s interrupted by user (Ctrl+C)", func.__name__)
+                    logger.warning("\n⚠ %s interrupted by user (Ctrl+C)", func.__name__)
                     raise
                 except dropbox.exceptions.RateLimitError as e:
                     dropbox_retry_after = getattr(e, "retry_after", None)
                     if dropbox_retry_after:
                         retry_after = min(dropbox_retry_after, max_backoff)
                     else:
-                        # Exponential backoff resets each set: 5s, 10s, 20s, 40s, 80s, 160s, 300s...
-                        retry_after = min(5 * (2**attempt_in_set), max_backoff)
+                        # Exponential: 5s, 10s, 20s, 40s, 80s, 160s, 300s (capped)
+                        retry_after = min(5 * (2**attempt), max_backoff)
 
                     logger.error("=" * 80)
                     logger.error(
-                        "✗ RATE LIMIT ERROR (attempt %d/%d, set %d/%d)",
+                        "✗ RATE LIMIT ERROR (attempt %d/%d)",
                         attempt + 1,
-                        total_attempts,
-                        set_num,
-                        num_sets,
+                        max_retries,
                     )
                     logger.error("   Retry after: %s seconds", retry_after)
 
-                    if attempt < total_attempts - 1:
+                    if attempt < max_retries - 1:
                         logger.warning(
                             "   → Waiting %ds before retry (Press Ctrl+C to abort)...",
                             retry_after,
@@ -80,14 +68,13 @@ def retry_dropbox(
                         try:
                             time.sleep(retry_after)
                         except KeyboardInterrupt:
-                            logger.warning("⚠ Retry aborted by user")
+                            logger.warning("\n⚠ Retry aborted by user")
                             raise
                     else:
                         logger.error("=" * 80)
                         logger.error(
-                            "✗✗✗ FAILED: Rate limited after %d attempts (%d sets)",
-                            total_attempts,
-                            num_sets,
+                            "✗✗✗ FAILED: Rate limited after %d attempts",
+                            max_retries,
                         )
                         logger.error("=" * 80)
                         raise
@@ -96,18 +83,18 @@ def retry_dropbox(
                     logger.error(
                         "✗ Dropbox API error (attempt %d/%d): %s",
                         attempt + 1,
-                        total_attempts,
+                        max_retries,
                         error_msg,
                     )
-                    if attempt < total_attempts - 1:
-                        wait_time = min(5 * (2**attempt_in_set), max_backoff)
+                    if attempt < max_retries - 1:
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
                         try:
                             time.sleep(wait_time)
                         except KeyboardInterrupt:
-                            logger.warning("⚠ Retry aborted by user")
+                            logger.warning("\n⚠ Retry aborted by user")
                             raise
                     else:
                         raise
@@ -115,18 +102,18 @@ def retry_dropbox(
                     logger.error(
                         "✗ Connection error (attempt %d/%d): %s",
                         attempt + 1,
-                        total_attempts,
+                        max_retries,
                         str(e),
                     )
-                    if attempt < total_attempts - 1:
-                        wait_time = min(5 * (2**attempt_in_set), max_backoff)
+                    if attempt < max_retries - 1:
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
                         try:
                             time.sleep(wait_time)
                         except KeyboardInterrupt:
-                            logger.warning("⚠ Retry aborted by user")
+                            logger.warning("\n⚠ Retry aborted by user")
                             raise
                     else:
                         raise
@@ -134,23 +121,23 @@ def retry_dropbox(
                     logger.error(
                         "✗ Unexpected error (attempt %d/%d): %s",
                         attempt + 1,
-                        total_attempts,
+                        max_retries,
                         type(e).__name__,
                     )
                     logger.error("   Details: %s", str(e))
-                    if attempt < total_attempts - 1:
-                        wait_time = min(5 * (2**attempt_in_set), max_backoff)
+                    if attempt < max_retries - 1:
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
                         try:
                             time.sleep(wait_time)
                         except KeyboardInterrupt:
-                            logger.warning("⚠ Retry aborted by user")
+                            logger.warning("\n⚠ Retry aborted by user")
                             raise
                     else:
                         raise
-            raise RuntimeError("Unreachable")
+            raise RuntimeError(f"{func.__name__} exhausted all retries")
 
         return wrapper
 
