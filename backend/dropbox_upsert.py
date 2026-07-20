@@ -94,10 +94,10 @@ def get_existing_asins(sheet: Worksheet) -> set[str]:
 
 
 def parse_order_date(order: dict[str, Any]) -> str | None:
-    """Parse order date, returning MM/DD/YYYY string. Prefers order_timestamp over order_date."""
+    """Parse order date, returning M/D/YYYY string. Prefers order_timestamp over order_date."""
     if order.get("order_timestamp"):
         dt = datetime.fromtimestamp(order["order_timestamp"] / 1000)
-        return dt.strftime("%m/%d/%Y")
+        return dt.strftime("%-m/%-d/%Y")
 
     date_str: str | None = order.get("order_date")
     if not date_str:
@@ -106,7 +106,7 @@ def parse_order_date(order: dict[str, Any]) -> str | None:
     for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
         try:
             dt = datetime.strptime(date_str, fmt)
-            return dt.strftime("%m/%d/%Y")
+            return dt.strftime("%-m/%-d/%Y")
         except ValueError:
             continue
 

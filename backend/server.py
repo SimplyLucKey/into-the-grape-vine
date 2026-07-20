@@ -116,12 +116,12 @@ class SyncResponse(BaseModel):
 
 
 def parse_delivery_date(order: AccountOrder) -> str | None:
-    """Parse delivery date from account order, returning MM/DD/YYYY string."""
+    """Parse delivery date from account order, returning M/D/YYYY string."""
     if not order.delivery_date_parsed:
         return None
 
     dt = datetime.fromisoformat(order.delivery_date_parsed.replace("Z", "+00:00"))
-    return dt.strftime("%m/%d/%Y")
+    return dt.strftime("%-m/%-d/%Y")
 
 
 def sync_delivery_dates_to_sheet(
