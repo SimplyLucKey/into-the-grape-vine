@@ -551,50 +551,55 @@ async def fetch_product_prices(
 
         logger.info("Found %d items needing product prices", len(asins_to_fetch))
 
-        if dry_run:
-            logger.info(
-                "DRY RUN: Would fetch product prices for %d items", len(asins_to_fetch)
-            )
-            return FetchProductPricesResponse(
-                success=True,
-                fetched=0,
-                failed=0,
-                skipped=len(asins_to_fetch),
-                dry_run=True,
-            )
-
         # Fetch product prices from Amazon
         asins_only = [asin for _, asin in asins_to_fetch]
         prices = fetch_multiple_prices(asins_only)
 
-        # Update sheet
+        # Update sheet (or just preview for dry run)
         fetched = 0
         failed = 0
 
         for row_idx, asin in asins_to_fetch:
             price = prices.get(asin)
             if price is not None:
-                sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
                 fetched += 1
-                logger.info(
-                    "Row %d (%s): Set product price $%.2f", row_idx, asin, price
-                )
+                if dry_run:
+                    logger.info(
+                        "DRY RUN - Row %d (%s): Would set product price $%.2f",
+                        row_idx,
+                        asin,
+                        price,
+                    )
+                else:
+                    sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
+                    logger.info(
+                        "Row %d (%s): Set product price $%.2f", row_idx, asin, price
+                    )
             else:
-                # Mark as -1 to indicate we tried and failed
-                # This prevents retrying the same item every time
-                sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
                 failed += 1
-                logger.warning(
-                    "Row %d (%s): Failed to fetch product price, marked as -1",
-                    row_idx,
-                    asin,
-                )
+                if dry_run:
+                    logger.warning(
+                        "DRY RUN - Row %d (%s): Would mark as -1 (failed to fetch)",
+                        row_idx,
+                        asin,
+                    )
+                else:
+                    sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
+                    logger.warning(
+                        "Row %d (%s): Failed to fetch product price, marked as -1",
+                        row_idx,
+                        asin,
+                    )
 
-        # Upload updated workbook (even if some failed, to save -1 markers)
-        if fetched > 0 or failed > 0:
+        # Upload updated workbook (skip if dry run)
+        if not dry_run and (fetched > 0 or failed > 0):
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
             logger.info(
                 "Product price fetch complete: %d fetched, %d failed", fetched, failed
+            )
+        elif dry_run:
+            logger.info(
+                "DRY RUN COMPLETE: Would update %d prices, %d failed", fetched, failed
             )
 
         return FetchProductPricesResponse(
