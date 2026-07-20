@@ -65,11 +65,8 @@ def retry_dropbox(
                             "   → Waiting %ds before retry (Press Ctrl+C to abort)...",
                             retry_after,
                         )
-                        try:
-                            time.sleep(retry_after)
-                        except KeyboardInterrupt:
-                            logger.warning("\n⚠ Retry aborted by user")
-                            raise
+                        for _ in range(int(retry_after)):
+                            time.sleep(1)  # Sleep 1s at a time to catch Ctrl+C faster
                     else:
                         logger.error("=" * 80)
                         logger.error(
@@ -91,11 +88,8 @@ def retry_dropbox(
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
-                        try:
-                            time.sleep(wait_time)
-                        except KeyboardInterrupt:
-                            logger.warning("\n⚠ Retry aborted by user")
-                            raise
+                        for _ in range(int(wait_time)):
+                            time.sleep(1)  # Sleep 1s at a time to catch Ctrl+C faster
                     else:
                         raise
                 except ConnectionError as e:
@@ -110,11 +104,8 @@ def retry_dropbox(
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
-                        try:
-                            time.sleep(wait_time)
-                        except KeyboardInterrupt:
-                            logger.warning("\n⚠ Retry aborted by user")
-                            raise
+                        for _ in range(int(wait_time)):
+                            time.sleep(1)  # Sleep 1s at a time to catch Ctrl+C faster
                     else:
                         raise
                 except Exception as e:
@@ -130,11 +121,8 @@ def retry_dropbox(
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
-                        try:
-                            time.sleep(wait_time)
-                        except KeyboardInterrupt:
-                            logger.warning("\n⚠ Retry aborted by user")
-                            raise
+                        for _ in range(int(wait_time)):
+                            time.sleep(1)  # Sleep 1s at a time to catch Ctrl+C faster
                     else:
                         raise
             raise RuntimeError(f"{func.__name__} exhausted all retries")
