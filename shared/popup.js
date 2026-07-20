@@ -84,6 +84,15 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   await loadVineOrders();
   await loadAccountOrders();
+
+  // Load saved price fetch settings
+  chrome.storage.local.get(['priceFetchSettings'], (result) => {
+    if (result.priceFetchSettings) {
+      const { daysBack, maxItems } = result.priceFetchSettings;
+      if (daysBack) daysBackInput.value = daysBack;
+      if (maxItems) maxItemsInput.value = maxItems;
+    }
+  });
 })();
 
 btnExtractVine.addEventListener('click', async () => {
@@ -288,6 +297,11 @@ async function performProductPricesFetch(dryRun = false) {
     // Get user settings
     const daysBack = parseInt(daysBackInput.value, 10);
     const maxItems = parseInt(maxItemsInput.value, 10);
+
+    // Save preferences for next time
+    chrome.storage.local.set({
+      priceFetchSettings: { daysBack, maxItems }
+    });
 
     const params = new URLSearchParams({
       dry_run: dryRun.toString(),
