@@ -495,7 +495,7 @@ async def fetch_product_prices(
         )
 
         # Find rows with missing product prices (within date threshold)
-        asins_to_fetch: list[tuple[int, str]] = []  # (row_idx, asin)
+        asins_to_fetch: list[tuple[int, str, str]] = []  # (row_idx, asin, name)
 
         for row_idx in range(2, sheet.max_row + 1):
             price_cell = sheet.cell(row=row_idx, column=_COL_PRICE)
@@ -530,7 +530,8 @@ async def fetch_product_prices(
 
             asin = extract_asin(url=url)
             if asin:
-                asins_to_fetch.append((row_idx, asin))
+                name = sheet.cell(row=row_idx, column=_COL_NAME).value or "Unknown"
+                asins_to_fetch.append((row_idx, asin, name))
 
                 # Stop at max_items limit
                 if len(asins_to_fetch) >= max_items:
@@ -551,44 +552,57 @@ async def fetch_product_prices(
 
         logger.info("Found %d items needing product prices", len(asins_to_fetch))
 
+        # Log what we're fetching
+        for row_idx, asin, name in asins_to_fetch:
+            name_preview = (name[:50] + "...") if len(name) > 50 else name
+            logger.info("  Row %d: %s - %s", row_idx, asin, name_preview)
+
         # Fetch product prices from Amazon
-        asins_only = [asin for _, asin in asins_to_fetch]
+        asins_only = [asin for _, asin, _ in asins_to_fetch]
         prices = fetch_multiple_prices(asins_only)
 
         # Update sheet (or just preview for dry run)
         fetched = 0
         failed = 0
 
-        for row_idx, asin in asins_to_fetch:
+        for row_idx, asin, name in asins_to_fetch:
+            name_preview = (name[:50] + "...") if len(name) > 50 else name
             price = prices.get(asin)
             if price is not None:
                 fetched += 1
                 if dry_run:
                     logger.info(
-                        "DRY RUN - Row %d (%s): Would set product price $%.2f",
+                        "DRY RUN - Row %d (%s - %s): Would set product price $%.2f",
                         row_idx,
                         asin,
+                        name_preview,
                         price,
                     )
                 else:
                     sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
                     logger.info(
-                        "Row %d (%s): Set product price $%.2f", row_idx, asin, price
+                        "Row %d (%s - %s): Set product price $%.2f",
+                        row_idx,
+                        asin,
+                        name_preview,
+                        price,
                     )
             else:
                 failed += 1
                 if dry_run:
                     logger.warning(
-                        "DRY RUN - Row %d (%s): Would mark as -1 (failed to fetch)",
+                        "DRY RUN - Row %d (%s - %s): Would mark as -1 (failed to fetch)",
                         row_idx,
                         asin,
+                        name_preview,
                     )
                 else:
                     sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
                     logger.warning(
-                        "Row %d (%s): Failed to fetch product price, marked as -1",
+                        "Row %d (%s - %s): Failed to fetch product price, marked as -1",
                         row_idx,
                         asin,
+                        name_preview,
                     )
 
         # Upload updated workbook (skip if dry run)
