@@ -23,9 +23,10 @@ T = TypeVar("T")
 
 
 def retry_dropbox(
-    max_retries: int = 5,
+    max_retries: int = 10,
+    max_backoff: int = 300,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """Retry decorator for Dropbox operations with exponential backoff."""
+    """Retry decorator for Dropbox operations with exponential backoff up to max_backoff seconds."""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
@@ -44,9 +45,11 @@ def retry_dropbox(
                     raise
                 except dropbox.exceptions.RateLimitError as e:
                     dropbox_retry_after = getattr(e, "retry_after", None)
-                    retry_after = (
-                        dropbox_retry_after if dropbox_retry_after else 5 * (2**attempt)
-                    )
+                    if dropbox_retry_after:
+                        retry_after = min(dropbox_retry_after, max_backoff)
+                    else:
+                        # Exponential: 5s, 10s, 20s, 40s, 80s, 160s, 300s (capped)
+                        retry_after = min(5 * (2**attempt), max_backoff)
 
                     logger.error("=" * 80)
                     logger.error(
@@ -80,7 +83,7 @@ def retry_dropbox(
                         error_msg,
                     )
                     if attempt < max_retries - 1:
-                        wait_time = 2 ** (attempt + 1)
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
@@ -99,7 +102,7 @@ def retry_dropbox(
                         str(e),
                     )
                     if attempt < max_retries - 1:
-                        wait_time = 2 ** (attempt + 1)
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
@@ -119,7 +122,7 @@ def retry_dropbox(
                     )
                     logger.error("   Details: %s", str(e))
                     if attempt < max_retries - 1:
-                        wait_time = 2 ** (attempt + 1)
+                        wait_time = min(5 * (2**attempt), max_backoff)
                         logger.warning(
                             "   → Retrying in %ds... (Press Ctrl+C to abort)", wait_time
                         )
