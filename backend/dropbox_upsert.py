@@ -134,7 +134,21 @@ def build_new_rows(
         and (asin := extract_asin(url=order["url"]))
         and asin not in existing_asins
     ]
-    new_orders.sort(key=lambda o: parse_order_date(order=o) or datetime.min)
+
+    # Sort by order_timestamp (preserves same-day order), fall back to parsing date string
+    def sort_key(order: dict[str, Any]) -> datetime:
+        if order.get("order_timestamp"):
+            return datetime.fromtimestamp(order["order_timestamp"] / 1000)
+        date_str = order.get("order_date")
+        if date_str:
+            for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+        return datetime.min
+
+    new_orders.sort(key=sort_key)
     return new_orders
 
 
