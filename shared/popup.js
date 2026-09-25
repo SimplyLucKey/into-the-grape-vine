@@ -332,7 +332,11 @@ async function performProductPricesFetch(dryRun = false) {
     if (result.fetched === 0 && result.failed === 0 && result.skipped === 0) {
       setStatus('All items already have product prices!', 'success');
     } else if (dryRun) {
-      setStatus(`Preview: Would fetch product prices for ${result.skipped} items`, 'success');
+      let message = `Preview: found ${result.fetched} product prices`;
+      if (result.failed > 0) {
+        message += `, ${result.failed} not found`;
+      }
+      setStatus(message, 'success');
     } else {
       let message = `Fetched ${result.fetched} product prices`;
       if (result.failed > 0) {

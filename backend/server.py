@@ -446,7 +446,7 @@ async def fetch_product_prices(
     1. Downloads the Excel file from Dropbox
     2. Finds all rows with blank price column (within date threshold)
     3. Fetches current price from Amazon product pages
-    4. Updates the price column (or marks as -1 if failed)
+    4. Updates the price column (failed items stay blank so the next run retries them)
     5. Uploads the updated file back to Dropbox (unless dry_run=true)
 
     Args:
@@ -500,8 +500,8 @@ async def fetch_product_prices(
         for row_idx in range(2, sheet.max_row + 1):
             price_cell = sheet.cell(row=row_idx, column=_COL_PRICE)
 
-            # Skip if already has a price (including -1 for failed attempts)
-            if price_cell.value is not None:
+            # Skip rows that have a price. -1 is an old "failed" marker, so retry it.
+            if price_cell.value is not None and price_cell.value != -1:
                 continue
 
             # Check order date
@@ -589,24 +589,15 @@ async def fetch_product_prices(
                     )
             else:
                 failed += 1
-                if dry_run:
-                    logger.warning(
-                        "DRY RUN - Row %d (%s - %s): Would mark as -1 (failed to fetch)",
-                        row_idx,
-                        asin,
-                        name_preview,
-                    )
-                else:
-                    sheet.cell(row=row_idx, column=_COL_PRICE, value=-1)
-                    logger.warning(
-                        "Row %d (%s - %s): Failed to fetch product price, marked as -1",
-                        row_idx,
-                        asin,
-                        name_preview,
-                    )
+                logger.warning(
+                    "Row %d (%s - %s): No price found, left unchanged",
+                    row_idx,
+                    asin,
+                    name_preview,
+                )
 
         # Upload updated workbook (skip if dry run)
-        if not dry_run and (fetched > 0 or failed > 0):
+        if not dry_run and fetched > 0:
             upload_workbook(client=client, workbook=workbook, file_path=file_path)
             logger.info(
                 "Product price fetch complete: %d fetched, %d failed", fetched, failed
