@@ -18,3 +18,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "ANN"]
+
+# Use public PyPI so the lockfile works on any machine,
+# not only machines with access to a private package mirror.
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
