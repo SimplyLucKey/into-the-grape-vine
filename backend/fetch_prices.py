@@ -25,17 +25,15 @@ HEADERS = {
 def extract_price_from_html(html: str, asin: str) -> float | None:
     """Extract price from Amazon product page HTML."""
     patterns = [
-        # Real markup: <span class="a-price-whole">29<span class="a-price-decimal">.</span></span>
         (
             "a-price-whole/fraction",
-            r'<span class="a-price-whole">([\d,]+)\s*(?:<span class="a-price-decimal">\.</span>)?'
-            r'\s*</span>\s*<span class="a-price-fraction">(\d+)</span>',
+            r'<span class="a-price-whole">(\d+)</span>.*?<span class="a-price-fraction">(\d+)</span>',
         ),
-        ("a-offscreen", r'<span class="a-offscreen">\s*\$([\d,]+\.\d{2})\s*</span>'),
-        ("JSON-LD price", r'"price":"([\d,]+\.\d+)"'),
+        ("a-offscreen", r'<span class="a-offscreen">\$(\d+\.\d+)</span>'),
+        ("JSON-LD price", r'"price":"(\d+\.\d+)"'),
         (
             "priceblock_ourprice",
-            r'<span id="priceblock_ourprice".*?>.*?\$([\d,]+\.\d+).*?</span>',
+            r'<span id="priceblock_ourprice".*?>.*?\$(\d+\.\d+).*?</span>',
         ),
     ]
 
@@ -44,7 +42,7 @@ def extract_price_from_html(html: str, asin: str) -> float | None:
         if match:
             try:
                 if len(match.groups()) == 2:
-                    dollars = match.group(1).replace(",", "")
+                    dollars = match.group(1)
                     cents = match.group(2)
                     price = float(f"{dollars}.{cents}")
                     logger.info(
@@ -55,7 +53,7 @@ def extract_price_from_html(html: str, asin: str) -> float | None:
                     )
                     return price
                 else:
-                    price = float(match.group(1).replace(",", ""))
+                    price = float(match.group(1))
                     logger.info(
                         "ASIN %s: Extracted $%.2f using pattern '%s'",
                         asin,
@@ -76,18 +74,6 @@ def extract_price_from_html(html: str, asin: str) -> float | None:
         "ASIN %s: No price pattern matched in HTML (length: %d chars)", asin, len(html)
     )
     return None
-
-
-def diagnose_missing_price(html: str) -> tuple[str, bool]:
-    """Return (reason, should_retry) for a page with no price."""
-    bot_check_markers = ("validateCaptcha", "Robot Check", "api-services-support@amazon.com")
-    if any(marker in html for marker in bot_check_markers):
-        return "Amazon showed a bot check (captcha) instead of the product page", True
-    if "Currently unavailable" in html or "currently unavailable" in html:
-        return "product is currently unavailable (no price listed)", False
-    title = re.search(r"<title>(.*?)</title>", html, re.DOTALL)
-    page_title = title.group(1).strip()[:80] if title else "no title"
-    return f"no known price markup found (page title: {page_title!r})", False
 
 
 def fetch_product_price(
@@ -155,13 +141,12 @@ def fetch_product_price(
             if price:
                 logger.info("✓ ASIN %s: Successfully fetched price $%.2f", asin, price)
                 return price
-
-            reason, should_retry = diagnose_missing_price(response.text)
-            if should_retry and attempt < retries:
-                logger.warning("ASIN %s: %s, retrying", asin, reason)
-                continue
-            logger.error("✗ ASIN %s: No price - %s", asin, reason)
-            return None
+            else:
+                logger.error(
+                    "✗ ASIN %s: Price extraction failed - page structure may have changed",
+                    asin,
+                )
+                return None
 
         except requests.Timeout:
             logger.warning(
