@@ -30,5 +30,6 @@ These rules apply to replies, docs, comments, and docstrings.
 - **Keep row order.** New Vine rows are sorted by `order_timestamp` (epoch ms). Many orders can share one day, so the date string alone loses their order.
 - **Dropbox rate limits are strict.** The Dropbox app is in development status, so uploads often fail for a long time. `@retry_dropbox()` in `backend/dropbox_utils.py` handles retries. The SDK's own retries are off (`max_retries_on_*=0` in `dropbox_auth.py`) so two retry layers never stack.
 - **Ctrl+C must stop the server fast.** Long waits sleep in 1-second steps so the interrupt gets through.
+- **Load Amazon pages from the browser, not the backend.** Amazon shows a bot check (captcha) to server requests. `background.js` loads product pages with the user's own login. The backend only lists rows (`/price-targets`) and writes prices (`/save-prices`).
 - **Dry run means "do everything except upload."** Fetch and compute real results, log them, and skip only the Dropbox write.
 - **Python packages come from public PyPI.** `backend/pyproject.toml` sets the index so `uv.lock` works on any machine.
