@@ -286,7 +286,14 @@ btnVineSync.addEventListener('click', () => performVineOrdersSync(false));
 btnSyncDryRun.addEventListener('click', () => performDeliveryDatesSync(true));
 btnSync.addEventListener('click', () => performDeliveryDatesSync(false));
 
-// Helper function for fetching product prices from Amazon
+// Show progress messages from background.js while prices are fetched
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'PRICE_FETCH_PROGRESS') {
+    productPricesProgressEl.textContent = message.text;
+  }
+});
+
+// Price fetching runs in background.js, so it uses your Amazon login and keeps going if the popup closes
 async function performProductPricesFetch(dryRun = false) {
   const activeBtn = dryRun ? btnProductPricesDryRun : btnProductPrices;
   const otherBtn = dryRun ? btnProductPrices : btnProductPricesDryRun;
@@ -295,66 +302,37 @@ async function performProductPricesFetch(dryRun = false) {
   otherBtn.disabled = true;
   activeBtn.textContent = dryRun ? '⏳ Checking...' : '⏳ Fetching...';
   setStatus('');
-  productPricesProgressEl.textContent = 'Connecting to backend...';
+  productPricesProgressEl.textContent = 'Finding rows that need prices...';
 
-  try {
-    // Get user settings
-    const daysBack = parseInt(daysBackInput.value, 10);
-    const maxItems = parseInt(maxItemsInput.value, 10);
+  const daysBack = parseInt(daysBackInput.value, 10);
+  const maxItems = parseInt(maxItemsInput.value, 10);
+  chrome.storage.local.set({ priceFetchSettings: { daysBack, maxItems } });
 
-    // Save preferences for next time
-    console.log('[Into the Grape Vine] Saving settings:', { daysBack, maxItems });
-    chrome.storage.local.set({
-      priceFetchSettings: { daysBack, maxItems }
-    }, () => {
-      console.log('[Into the Grape Vine] Settings saved');
-    });
+  const result = await chrome.runtime.sendMessage({
+    action: 'FETCH_PRODUCT_PRICES',
+    dryRun,
+    daysBack,
+    maxItems,
+  });
 
-    const params = new URLSearchParams({
-      dry_run: dryRun.toString(),
-      days_back: daysBack.toString(),
-      max_items: maxItems.toString(),
-    });
-
-    const url = `http://localhost:8000/fetch-product-prices?${params}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Product price fetch failed');
-    }
-
-    const result = await response.json();
-
-    if (result.fetched === 0 && result.failed === 0 && result.skipped === 0) {
-      setStatus('All items already have product prices!', 'success');
-    } else if (dryRun) {
-      let message = `Preview: found ${result.fetched} product prices`;
-      if (result.failed > 0) {
-        message += `, ${result.failed} not found`;
-      }
-      setStatus(message, 'success');
-    } else {
-      let message = `Fetched ${result.fetched} product prices`;
-      if (result.failed > 0) {
-        message += `, ${result.failed} failed`;
-      }
-      setStatus(message, 'success');
-    }
-    productPricesProgressEl.textContent = '';
-  } catch (err) {
-    if (err.message.includes('fetch')) {
-      setStatus('Backend not running. Start server: ./start-server.sh', 'error');
-    } else {
-      setStatus(`Product price fetch failed: ${err.message}`, 'error');
-    }
-    productPricesProgressEl.textContent = '';
-    console.error('[Into the Grape Vine] Product price fetch error:', err);
+  if (!result?.ok) {
+    const error = result?.error ?? 'No response from background script';
+    const backendDown = error.includes('fetch');
+    setStatus(backendDown ? 'Backend not running. Start server: ./start-server.sh' : `Price fetch failed: ${error}`, 'error');
+  } else if (result.total === 0) {
+    setStatus('All items already have product prices!', 'success');
+  } else if (result.stoppedByBotCheck) {
+    setStatus(`Amazon showed a bot check after ${result.found.length} prices. Open amazon.com, solve it, then try again.`, 'error');
+  } else {
+    const verb = dryRun ? 'Preview: found' : 'Saved';
+    const count = dryRun ? result.found.length : result.saved;
+    let message = `${verb} ${count} product prices`;
+    if (result.missing.length > 0) message += `, ${result.missing.length} not found`;
+    setStatus(message, 'success');
   }
+  if (result?.missing?.length) console.table(result.missing);
 
+  productPricesProgressEl.textContent = '';
   activeBtn.disabled = false;
   otherBtn.disabled = false;
   activeBtn.textContent = dryRun ? '🔍 Preview' : '💰 Fetch Prices';

@@ -16,6 +16,7 @@ import dropbox
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from openpyxl.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from pydantic import BaseModel
 
@@ -32,7 +33,6 @@ from dropbox_upsert import (
     get_existing_asins,
 )
 from dropbox_utils import download_workbook, get_client, upload_workbook
-from fetch_prices import fetch_multiple_prices
 
 load_dotenv()
 
@@ -424,199 +424,150 @@ async def sync_delivery_dates(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class FetchProductPricesResponse(BaseModel):
-    """Response from fetch-product-prices endpoint."""
+def _open_inventory() -> tuple[dropbox.Dropbox, str, Workbook, Worksheet]:
+    """Download the workbook and return (client, file_path, workbook, inventory sheet)."""
+    import os
 
-    success: bool
-    fetched: int
-    failed: int
-    skipped: int
-    dry_run: bool = False
+    file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
+    if not file_path:
+        raise HTTPException(status_code=500, detail="DROPBOX_FILE_PATH not configured")
+
+    client: dropbox.Dropbox = get_client()
+    workbook = download_workbook(client=client, file_path=file_path)
+    if INVENTORY_SHEET not in workbook.sheetnames:
+        raise HTTPException(
+            status_code=500, detail=f"Sheet '{INVENTORY_SHEET}' not found in workbook"
+        )
+    return client, file_path, workbook, workbook[INVENTORY_SHEET]
 
 
-@app.post("/fetch-product-prices", response_model=FetchProductPricesResponse)
-async def fetch_product_prices(
-    dry_run: bool = False,
-    days_back: int = 14,
-    max_items: int = 50,
-) -> FetchProductPricesResponse:
-    """Fetch product prices from Amazon product pages for items missing prices.
+def _needs_price(sheet: Worksheet, row_idx: int) -> bool:
+    """True if the price cell is blank. -1 is an old "failed" marker, so it counts as blank."""
+    value = sheet.cell(row=row_idx, column=_COL_PRICE).value
+    return value is None or value == -1
 
-    This endpoint:
-    1. Downloads the Excel file from Dropbox
-    2. Finds all rows with blank price column (within date threshold)
-    3. Fetches current price from Amazon product pages
-    4. Updates the price column (failed items stay blank so the next run retries them)
-    5. Uploads the updated file back to Dropbox (unless dry_run=true)
 
-    Args:
-        dry_run: If True, only report what would be fetched without modifying the file
-        days_back: Only fetch prices for orders within this many days (default 14)
-        max_items: Maximum number of items to fetch in one run (default 50)
-    """
+class PriceTarget(BaseModel):
+    """A sheet row that needs a product price."""
+
+    row: int
+    asin: str
+    name: str
+
+
+class PriceTargetsResponse(BaseModel):
+    """Response from price-targets endpoint."""
+
+    targets: list[PriceTarget]
+
+
+@app.post("/price-targets", response_model=PriceTargetsResponse)
+async def price_targets(days_back: int = 14, max_items: int = 50) -> PriceTargetsResponse:
+    """List rows with a blank price, ordered within the last days_back days."""
     try:
-        import os
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         logger.info(
-            "Starting product price fetch (dry_run=%s, days_back=%d, max_items=%d)",
-            dry_run,
-            days_back,
-            max_items,
+            "Finding rows that need prices (days_back=%d, max_items=%d)", days_back, max_items
         )
-
-        # Get Dropbox client
-        client: dropbox.Dropbox = get_client()
-        account = client.users_get_current_account()
-        logger.info("Connected to Dropbox as %s", account.name.display_name)
-
-        # Download workbook
-        file_path: str | None = os.getenv("DROPBOX_FILE_PATH")
-        if not file_path:
-            raise HTTPException(
-                status_code=500, detail="DROPBOX_FILE_PATH not configured"
-            )
-
-        workbook = download_workbook(client=client, file_path=file_path)
-
-        if INVENTORY_SHEET not in workbook.sheetnames:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Sheet '{INVENTORY_SHEET}' not found in workbook",
-            )
-
-        sheet: Worksheet = workbook[INVENTORY_SHEET]
-
-        # Calculate cutoff date
+        _, _, _, sheet = _open_inventory()
         cutoff_date = datetime.now() - timedelta(days=days_back)
-        logger.info(
-            "Only fetching product prices for orders after %s",
-            cutoff_date.strftime("%Y-%m-%d"),
-        )
 
-        # Find rows with missing product prices (within date threshold)
-        asins_to_fetch: list[tuple[int, str, str]] = []  # (row_idx, asin, name)
-
+        targets: list[PriceTarget] = []
         for row_idx in range(2, sheet.max_row + 1):
-            price_cell = sheet.cell(row=row_idx, column=_COL_PRICE)
-
-            # Skip rows that have a price. -1 is an old "failed" marker, so retry it.
-            if price_cell.value is not None and price_cell.value != -1:
+            if not _needs_price(sheet, row_idx):
                 continue
 
-            # Check order date
-            order_date_cell = sheet.cell(row=row_idx, column=_COL_ORDER_DATE)
-            if order_date_cell.value:
+            order_date = sheet.cell(row=row_idx, column=_COL_ORDER_DATE).value
+            if order_date:
                 try:
-                    if isinstance(order_date_cell.value, datetime):
-                        order_date = order_date_cell.value
-                    else:
-                        # Try parsing if it's a string
-                        order_date = datetime.strptime(
-                            str(order_date_cell.value), "%m/%d/%Y"
-                        )
-
-                    # Skip if too old
-                    if order_date < cutoff_date:
-                        continue
-                except (ValueError, AttributeError):
-                    # Can't parse date, skip this row
+                    if not isinstance(order_date, datetime):
+                        order_date = datetime.strptime(str(order_date), "%m/%d/%Y")
+                except ValueError:
                     logger.warning("Row %d: Could not parse order date", row_idx)
+                    continue
+                if order_date < cutoff_date:
                     continue
 
             url = sheet.cell(row=row_idx, column=_COL_URL).value
-            if not url or not isinstance(url, str):
+            asin = extract_asin(url=url) if isinstance(url, str) else None
+            if not asin:
                 continue
 
-            asin = extract_asin(url=url)
-            if asin:
-                name = sheet.cell(row=row_idx, column=_COL_NAME).value or "Unknown"
-                asins_to_fetch.append((row_idx, asin, name))
+            name = sheet.cell(row=row_idx, column=_COL_NAME).value or "Unknown"
+            targets.append(PriceTarget(row=row_idx, asin=asin, name=name))
+            logger.info("  Row %d: %s - %s", row_idx, asin, name[:50])
+            if len(targets) >= max_items:
+                logger.info("Reached max_items limit (%d)", max_items)
+                break
 
-                # Stop at max_items limit
-                if len(asins_to_fetch) >= max_items:
-                    logger.info(
-                        "Reached max_items limit (%d), stopping scan", max_items
-                    )
-                    break
+        logger.info("Found %d rows that need prices", len(targets))
+        return PriceTargetsResponse(targets=targets)
 
-        if not asins_to_fetch:
-            logger.info("No items need product price fetching")
-            return FetchProductPricesResponse(
-                success=True,
-                fetched=0,
-                failed=0,
-                skipped=0,
-                dry_run=dry_run,
-            )
-
-        logger.info("Found %d items needing product prices", len(asins_to_fetch))
-
-        # Log what we're fetching
-        for row_idx, asin, name in asins_to_fetch:
-            name_preview = (name[:50] + "...") if len(name) > 50 else name
-            logger.info("  Row %d: %s - %s", row_idx, asin, name_preview)
-
-        # Fetch product prices from Amazon
-        asins_only = [asin for _, asin, _ in asins_to_fetch]
-        prices = fetch_multiple_prices(asins_only)
-
-        # Update sheet (or just preview for dry run)
-        fetched = 0
-        failed = 0
-
-        for row_idx, asin, name in asins_to_fetch:
-            name_preview = (name[:50] + "...") if len(name) > 50 else name
-            price = prices.get(asin)
-            if price is not None:
-                fetched += 1
-                if dry_run:
-                    logger.info(
-                        "DRY RUN - Row %d (%s - %s): Would set product price $%.2f",
-                        row_idx,
-                        asin,
-                        name_preview,
-                        price,
-                    )
-                else:
-                    sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
-                    logger.info(
-                        "Row %d (%s - %s): Set product price $%.2f",
-                        row_idx,
-                        asin,
-                        name_preview,
-                        price,
-                    )
-            else:
-                failed += 1
-                logger.warning(
-                    "Row %d (%s - %s): No price found, left unchanged",
-                    row_idx,
-                    asin,
-                    name_preview,
-                )
-
-        # Upload updated workbook (skip if dry run)
-        if not dry_run and fetched > 0:
-            upload_workbook(client=client, workbook=workbook, file_path=file_path)
-            logger.info(
-                "Product price fetch complete: %d fetched, %d failed", fetched, failed
-            )
-        elif dry_run:
-            logger.info(
-                "DRY RUN COMPLETE: Would update %d prices, %d failed", fetched, failed
-            )
-
-        return FetchProductPricesResponse(
-            success=True,
-            fetched=fetched,
-            failed=failed,
-            skipped=0,
-            dry_run=False,
-        )
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Product price fetch failed")
+        logger.exception("Finding price targets failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FoundPrice(BaseModel):
+    """A price the extension read from a product page."""
+
+    asin: str
+    price: float
+
+
+class SavePricesRequest(BaseModel):
+    """Prices to write to the sheet."""
+
+    prices: list[FoundPrice]
+
+
+class SavePricesResponse(BaseModel):
+    """Response from save-prices endpoint."""
+
+    success: bool
+    saved: int
+    dry_run: bool = False
+
+
+@app.post("/save-prices", response_model=SavePricesResponse)
+async def save_prices(request: SavePricesRequest, dry_run: bool = False) -> SavePricesResponse:
+    """Write prices to rows with a blank price, matched by ASIN. Uploads once, unless dry_run."""
+    try:
+        logger.info("Saving %d prices (dry_run=%s)", len(request.prices), dry_run)
+        if not request.prices:
+            return SavePricesResponse(success=True, saved=0, dry_run=dry_run)
+
+        # Download again and match by ASIN, since rows can move between the two calls
+        client, file_path, workbook, sheet = _open_inventory()
+        price_by_asin = {p.asin: p.price for p in request.prices}
+
+        saved = 0
+        for row_idx in range(2, sheet.max_row + 1):
+            url = sheet.cell(row=row_idx, column=_COL_URL).value
+            asin = extract_asin(url=url) if isinstance(url, str) else None
+            if asin not in price_by_asin or not _needs_price(sheet, row_idx):
+                continue
+
+            price = price_by_asin[asin]
+            name = str(sheet.cell(row=row_idx, column=_COL_NAME).value or "Unknown")[:50]
+            prefix = "DRY RUN - Would set" if dry_run else "Set"
+            logger.info("%s row %d (%s - %s) to $%.2f", prefix, row_idx, asin, name, price)
+            if not dry_run:
+                sheet.cell(row=row_idx, column=_COL_PRICE, value=price)
+            saved += 1
+
+        if saved and not dry_run:
+            upload_workbook(client=client, workbook=workbook, file_path=file_path)
+        logger.info("Price save complete: %d rows%s", saved, " (dry run)" if dry_run else "")
+        return SavePricesResponse(success=True, saved=saved, dry_run=dry_run)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Saving prices failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
