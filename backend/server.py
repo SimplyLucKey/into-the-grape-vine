@@ -501,7 +501,10 @@ async def price_targets(days_back: int = 14, max_items: int = 50) -> PriceTarget
                 logger.info("Reached max_items limit (%d)", max_items)
                 break
 
-        logger.info("Found %d rows that need prices", len(targets))
+        logger.info(
+            "Found %d rows that need prices. The browser now loads each product page...",
+            len(targets),
+        )
         return PriceTargetsResponse(targets=targets)
 
     except HTTPException:
@@ -509,6 +512,28 @@ async def price_targets(days_back: int = 14, max_items: int = 50) -> PriceTarget
     except Exception as e:
         logger.exception("Finding price targets failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class PriceProgress(BaseModel):
+    """One step of a browser price fetch, sent so the server terminal shows progress."""
+
+    index: int
+    total: int
+    asin: str
+    name: str
+    price: float | None = None
+    reason: str | None = None
+
+
+@app.post("/price-progress")
+async def price_progress(progress: PriceProgress) -> dict[str, bool]:
+    """Log one browser price fetch result."""
+    label = f"[{progress.index}/{progress.total}] {progress.asin} - {progress.name[:50]}"
+    if progress.price is not None:
+        logger.info("  ✓ %s: $%.2f", label, progress.price)
+    else:
+        logger.warning("  ✗ %s: %s", label, progress.reason)
+    return {"ok": True}
 
 
 class FoundPrice(BaseModel):

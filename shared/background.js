@@ -109,6 +109,7 @@ function reportPriceProgress(text) {
 /** Ask the backend which rows need prices, read each product page, then save the prices. */
 async function fetchProductPrices({ dryRun, daysBack, maxItems }) {
   const query = new URLSearchParams({ days_back: daysBack, max_items: maxItems });
+  console.log(`[Into the Grape Vine] Price fetch started (dry run: ${dryRun})`);
   const { targets } = await postJson(`/price-targets?${query}`);
   if (!targets.length) return { ok: true, total: 0, found: [], missing: [] };
 
@@ -128,6 +129,16 @@ async function fetchProductPrices({ dryRun, daysBack, maxItems }) {
       result = { reason: err.message };
     }
 
+    // Show each result in the server terminal too. A failed log call must not stop the run.
+    postJson('/price-progress', {
+      index: i + 1,
+      total: targets.length,
+      asin: target.asin,
+      name: target.name,
+      price: result.price ?? null,
+      reason: result.reason ?? null,
+    }).catch(() => {});
+
     if (result.price !== undefined) {
       found.push({ asin: target.asin, price: result.price, name: target.name });
       console.log(`[Into the Grape Vine] ✓ ${target.asin} $${result.price} - ${target.name}`);
@@ -138,6 +149,7 @@ async function fetchProductPrices({ dryRun, daysBack, maxItems }) {
 
     // Once Amazon shows a bot check, the next pages will show it too
     if (result.botCheck) {
+      console.warn('[Into the Grape Vine] Stopping: Amazon showed a bot check');
       stoppedByBotCheck = true;
       break;
     }
